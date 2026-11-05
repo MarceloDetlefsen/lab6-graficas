@@ -15,12 +15,28 @@ use rasterizer::{rasterize, TriangleMode, VIEWPORT_HEIGHT, VIEWPORT_WIDTH};
 use raylib::prelude::*;
 use scene::build_model_matrix;
 use shaders::{fragment_shader, shader_name, vertex_shader, Shader};
+use std::fs;
+use std::path::PathBuf;
 
 pub struct Uniforms {
     pub model_matrix: Matrix,
     pub time: f32,
     pub light_dir: Vector3,
     pub camera_pos: Vector3,
+}
+
+fn next_capture_path() -> PathBuf {
+    let captures_dir = PathBuf::from("captures");
+    fs::create_dir_all(&captures_dir).expect("No se pudo crear el directorio captures");
+
+    let mut index = 1;
+    loop {
+        let path = captures_dir.join(format!("shot_{index:03}.png"));
+        if !path.exists() {
+            return path;
+        }
+        index += 1;
+    }
 }
 
 fn render(
@@ -120,6 +136,11 @@ fn main() {
         }
         if window.is_key_pressed(KeyboardKey::KEY_THREE) {
             shader = Shader::GasGiant;
+        }
+        if window.is_key_pressed(KeyboardKey::KEY_P) {
+            let capture_path = next_capture_path();
+            framebuffer.render_to_file(capture_path.to_str().expect("Ruta de captura inválida"));
+            println!("Captura guardada en {}", capture_path.display());
         }
         if window.is_key_down(KeyboardKey::KEY_LEFT) {
             yaw -= 0.03;
