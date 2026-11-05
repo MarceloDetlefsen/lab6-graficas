@@ -9,64 +9,96 @@ use crate::noise;
 use crate::shaders::{diffuse_factor, surface_view};
 
 // Percentil inferior usado para remapear el campo y evitar una masa gris plana.
-pub const H_LOW: f32 = 0.507;
+pub const H_LOW: f32 = 0.280;
 // Percentil superior usado para remapear el campo y reservar contraste para vetas.
-pub const H_HIGH: f32 = 0.826;
-// Factor anisotrópico: valores mayores alargan las vetas sobre el eje Y.
-pub const VEIN_STRETCH: f32 = 2.8;
+pub const H_HIGH: f32 = 0.717;
+// Factor anisotrópico: valores mayores alargan las vetas paralelas sobre el eje Y.
+pub const VEIN_STRETCH: f32 = 5.5;
 // Amplitud del domain warp; valores altos curvan pero también pueden disolver vetas.
-pub const WARP_AMP: f32 = 0.14;
+pub const WARP_AMP: f32 = 0.08;
 // Frecuencia del ruido que deforma el dominio.
 pub const WARP_FREQ: f32 = 1.25;
 // Frecuencia de la máscara de vegetación de baja frecuencia.
 pub const BIOME_FREQ: f32 = 1.8;
 // Umbral alto que limita la vegetación a regiones aisladas.
-pub const BIOME_THRESHOLD: f32 = 0.52;
+pub const BIOME_THRESHOLD: f32 = 0.58;
 // Suavidad del umbral de vegetación.
-pub const BIOME_SOFTNESS: f32 = 0.06;
+pub const BIOME_SOFTNESS: f32 = 0.05;
 // Umbral de las crestas finas que se muestran como grietas.
 pub const CRACK_THRESHOLD: f32 = 0.84;
 // Suavidad del umbral de grietas.
-pub const CRACK_SOFTNESS: f32 = 0.05;
+pub const CRACK_SOFTNESS: f32 = 0.025;
 // Octavas máximas para mantener usable el renderer en CPU.
 pub const TERRAIN_OCTAVES: usize = 4;
 // Agudeza de cada cresta ridged; valores mayores producen vetas más finas.
-pub const RIDGE_SHARPNESS: f32 = 2.5;
+pub const RIDGE_SHARPNESS: f32 = 4.0;
 // Amplitud de la capa de detalle de alta frecuencia.
 pub const RIDGE_DETAIL_AMP: f32 = 0.18;
-// Nivel de altura por debajo del cual aparecen los mares ácidos.
-pub const SEA_LEVEL: f32 = 0.15;
+// Frecuencia de la capa de vetas finas; valores mayores producen líneas numerosas.
+pub const RIDGE_DETAIL_FREQ: f32 = 5.0;
+// Nivel de altura por debajo del cual aparecen los mares ácidos, como acento pequeño.
+pub const SEA_LEVEL: f32 = 0.03;
 // Color de las cuencas más bajas.
 pub const COLOR_SEA: [f32; 3] = [0.10, 0.75, 0.55];
-// Color de la roca ámbar en alturas bajas.
-pub const COLOR_AMBER: [f32; 3] = [0.45, 0.22, 0.05];
-// Color de la roca naranja en alturas medias-altas.
-pub const COLOR_BURNT_ORANGE: [f32; 3] = [0.85, 0.40, 0.08];
-// Color de las crestas altas y oscuras.
-pub const COLOR_BLUE_VIOLET: [f32; 3] = [0.18, 0.12, 0.32];
+// Color de sombra cálida de la roca.
+pub const COLOR_ROCK_SHADOW: [f32; 3] = [0.25, 0.10, 0.04];
+// Color ámbar dominante de la roca.
+pub const COLOR_AMBER: [f32; 3] = [0.75, 0.40, 0.08];
+// Color dorado de las crestas claras.
+pub const COLOR_GOLD: [f32; 3] = [0.98, 0.72, 0.25];
 // Color base del bioma Brinstar.
 pub const COLOR_TOXIC_GREEN: [f32; 3] = [0.35, 0.85, 0.20];
 // Toque rosado mezclado dentro del bioma por ruido fino.
 pub const COLOR_PINK: [f32; 3] = [0.90, 0.35, 0.60];
 // Color de las grietas, todavía sin emisión propia en esta fase.
-pub const COLOR_CRACK: [f32; 3] = [1.00, 0.55, 0.10];
+pub const COLOR_CRACK: [f32; 3] = [1.00, 0.65, 0.12];
 // Iluminación mínima para conservar detalle en el lado oscuro.
 pub const AMBIENT: f32 = 0.15;
 // Separación de las muestras de altura usadas para estimar el gradiente.
-pub const BUMP_DELTA: f32 = 0.002;
+pub const BUMP_DELTA: f32 = 0.006;
 // Fuerza del relieve sobre la normal; valores altos hacen más marcado el modelado.
-pub const BUMP_STRENGTH: f32 = 1.8;
+pub const BUMP_STRENGTH: f32 = 0.72;
 // Exponente del reflejo concentrado de los mares ácidos.
 pub const SEA_SPEC_POWER: f32 = 48.0;
 // Intensidad máxima del reflejo especular del mar.
 pub const SEA_SPEC_STRENGTH: f32 = 0.8;
 // Emisión máxima de las grietas en la cara nocturna.
 pub const LAVA_GLOW: f32 = 0.75;
+// Centros de los tres remolinos locales que curvan las vetas cercanas.
+pub const SWIRL_CENTERS: [[f32; 3]; 3] = [
+    [0.25, 0.45, 0.80],
+    [-0.50, -0.20, 0.70],
+    [0.55, -0.50, -0.40],
+];
+// Ángulo máximo de rotación de cada remolino en radianes.
+pub const SWIRL_STRENGTH: f32 = 0.75;
+// Radio de influencia de los remolinos en el dominio normalizado.
+pub const SWIRL_RADIUS: f32 = 0.32;
 
 static PRINTED_STATS: Once = Once::new();
 
+fn swirl_domain(mut p: Vector3) -> Vector3 {
+    for center_values in SWIRL_CENTERS {
+        let center = Vector3::new(center_values[0], center_values[1], center_values[2]);
+        let offset = p - center;
+        let radius = offset.length();
+        let falloff = (1.0 - radius / SWIRL_RADIUS).clamp(0.0, 1.0);
+        if falloff > 0.0 {
+            let angle = SWIRL_STRENGTH * falloff * falloff;
+            let (sin_angle, cos_angle) = angle.sin_cos();
+            let rotated = Vector3::new(
+                offset.x * cos_angle - offset.z * sin_angle,
+                offset.y,
+                offset.x * sin_angle + offset.z * cos_angle,
+            );
+            p = center + rotated;
+        }
+    }
+    p
+}
+
 fn raw_height_field(object_pos: Vector3) -> f32 {
-    let p = object_pos.normalize();
+    let p = swirl_domain(object_pos.normalize());
     let warp = noise::fbm(p * WARP_FREQ, 3, 2.0, 0.5) * 2.0 - 1.0;
     let warped = Vector3::new(
         p.x + warp * WARP_AMP,
@@ -74,19 +106,20 @@ fn raw_height_field(object_pos: Vector3) -> f32 {
         p.z + warp * WARP_AMP,
     );
     let broad_ridges = noise::ridged(warped, TERRAIN_OCTAVES, 2.0, 0.5).powf(RIDGE_SHARPNESS);
-    let fine_ridges = noise::ridged(warped * 3.2, 3, 2.0, 0.5).powf(RIDGE_SHARPNESS);
+    let fine_ridges = noise::ridged(warped * RIDGE_DETAIL_FREQ, 3, 2.0, 0.5)
+        .powf(RIDGE_SHARPNESS);
     (broad_ridges * (1.0 - RIDGE_DETAIL_AMP) + fine_ridges * RIDGE_DETAIL_AMP).clamp(0.0, 1.0)
 }
 
 fn fine_ridge_field(object_pos: Vector3) -> f32 {
-    let p = object_pos.normalize();
+    let p = swirl_domain(object_pos.normalize());
     let warp = noise::fbm(p * WARP_FREQ, 3, 2.0, 0.5) * 2.0 - 1.0;
     let warped = Vector3::new(
         p.x + warp * WARP_AMP,
         p.y / VEIN_STRETCH + warp * WARP_AMP * 0.5,
         p.z + warp * WARP_AMP,
     );
-    noise::ridged(warped * 3.2, 3, 2.0, 0.5).powf(RIDGE_SHARPNESS)
+    noise::ridged(warped * RIDGE_DETAIL_FREQ, 3, 2.0, 0.5).powf(RIDGE_SHARPNESS)
 }
 
 pub fn height_field(object_pos: Vector3) -> f32 {
@@ -134,8 +167,9 @@ fn print_statistics_once() {
 
         raw_values.sort_by(f32::total_cmp);
         println!(
-            "Rocky h raw: min={:.3}, p05={:.3}, p25={:.3}, p50={:.3}, p75={:.3}, p95={:.3}, max={:.3}",
+            "Rocky h raw: min={:.3}, p02={:.3}, p05={:.3}, p25={:.3}, p50={:.3}, p75={:.3}, p95={:.3}, max={:.3}",
             raw_values[0],
+            percentile(&raw_values, 0.02),
             percentile(&raw_values, 0.05),
             percentile(&raw_values, 0.25),
             percentile(&raw_values, 0.50),
@@ -152,6 +186,15 @@ fn print_statistics_once() {
             percentile(&biome_values, 0.75),
             percentile(&biome_values, 0.95),
             biome_values[biome_values.len() - 1],
+        );
+        println!(
+            "Rocky grietas field: p90={:.3}, p95={:.3}, p97={:.3}, p98={:.3}, p99={:.3}, max={:.3}",
+            percentile(&fine_ridges, 0.90),
+            percentile(&fine_ridges, 0.95),
+            percentile(&fine_ridges, 0.97),
+            percentile(&fine_ridges, 0.98),
+            percentile(&fine_ridges, 0.99),
+            fine_ridges[fine_ridges.len() - 1],
         );
         let biome_coverage = biome_values.iter().filter(|&&value| value > 0.5).count();
         let crack_coverage = fine_ridges
@@ -179,14 +222,14 @@ fn height_color(height: f32) -> Vector3 {
         color(COLOR_SEA)
     } else if height < 0.45 {
         noise::mix_color(
+            color(COLOR_ROCK_SHADOW),
             color(COLOR_AMBER),
-            color(COLOR_BURNT_ORANGE),
             noise::smoothstep(SEA_LEVEL, 0.45, height),
         )
     } else {
         noise::mix_color(
-            color(COLOR_BURNT_ORANGE),
-            color(COLOR_BLUE_VIOLET),
+            color(COLOR_AMBER),
+            color(COLOR_GOLD),
             noise::smoothstep(0.45, 1.0, height),
         )
     }

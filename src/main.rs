@@ -179,7 +179,8 @@ fn main() {
         zoom = (zoom + window.get_mouse_wheel_move() * 0.1).clamp(0.2, 4.0);
 
         let model_matrix = build_model_matrix(&obj, scale, yaw, pitch, zoom);
-        let base_light = Vector3::new(-1.0, -1.0, -1.0).normalize();
+        // En la convención del renderer, -z es el frente visible de la esfera.
+        let base_light = Vector3::new(-0.65, -0.80, -1.0).normalize();
         let light_dir = Vector3::new(
             base_light.x * light_angle.cos() - base_light.z * light_angle.sin(),
             base_light.y,
