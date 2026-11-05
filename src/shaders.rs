@@ -47,5 +47,6 @@ pub fn vertex_shader(vertex: &Vertex, uniforms: &Uniforms) -> Vertex {
 }
 
 pub fn fragment_shader(fragment: &Fragment) -> Vector3 {
-    fragment.color
+    let normal = fragment.normal.normalize();
+    normal * 0.5 + Vector3::new(0.5, 0.5, 0.5)
 }
