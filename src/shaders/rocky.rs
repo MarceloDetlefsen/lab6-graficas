@@ -78,6 +78,16 @@ pub const SWIRL_CENTERS: [[f32; 3]; 3] = [
 pub const SWIRL_STRENGTH: f32 = 1.85;
 // Radio de influencia de los remolinos en el dominio normalizado.
 pub const SWIRL_RADIUS: f32 = 0.42;
+// Frecuencia espacial baja de la capa de nubes.
+pub const CLOUD_FREQ: f32 = 1.7;
+// Velocidad de rotación de las nubes alrededor del eje Y.
+pub const CLOUD_SPEED: f32 = 0.28;
+// Umbral de cobertura: subirlo deja menos nubes.
+pub const CLOUD_COVERAGE: f32 = 0.52;
+// Opacidad máxima de las nubes sobre la superficie.
+pub const CLOUD_OPACITY: f32 = 0.50;
+// Color gris-violeta oscuro de las nubes.
+pub const CLOUD_COLOR: [f32; 3] = [0.28, 0.24, 0.38];
 
 static PRINTED_STATS: Once = Once::new();
 
@@ -152,6 +162,19 @@ pub fn crack_mask(object_pos: Vector3) -> f32 {
         CRACK_THRESHOLD + CRACK_SOFTNESS,
         fine_ridge,
     )
+}
+
+pub fn cloud_mask(object_pos: Vector3, time: f32) -> f32 {
+    let p = object_pos.normalize();
+    let angle = time * CLOUD_SPEED;
+    let (sin_angle, cos_angle) = angle.sin_cos();
+    let rotated = Vector3::new(
+        p.x * cos_angle - p.z * sin_angle,
+        p.y,
+        p.x * sin_angle + p.z * cos_angle,
+    );
+    let cloud_noise = noise::fbm4(rotated * CLOUD_FREQ, time * 0.12, 3, 2.0, 0.5);
+    noise::smoothstep(CLOUD_COVERAGE, CLOUD_COVERAGE + 0.14, cloud_noise)
 }
 
 fn percentile(sorted: &[f32], fraction: f32) -> f32 {
@@ -320,6 +343,11 @@ fn lit_surface_color(
     result
 }
 
+fn lit_cloud_color(fragment: &Fragment, uniforms: &Uniforms) -> Vector3 {
+    let diffuse = diffuse_factor(fragment.normal, uniforms);
+    color(CLOUD_COLOR) * (AMBIENT + (1.0 - AMBIENT) * diffuse)
+}
+
 pub fn shade(fragment: &Fragment, uniforms: &Uniforms) -> Vector3 {
     print_statistics_once();
     let height = height_field(fragment.object_pos);
@@ -334,7 +362,20 @@ pub fn shade(fragment: &Fragment, uniforms: &Uniforms) -> Vector3 {
         }
         3 => {
             let base = surface_color(fragment.object_pos, height);
-            lit_surface_color(fragment, uniforms, height, base)
+            let surface = lit_surface_color(fragment, uniforms, height, base);
+            let clouds = cloud_mask(fragment.object_pos, uniforms.time);
+            let cloud_alpha = clouds * CLOUD_OPACITY;
+            let cloud_color = lit_cloud_color(fragment, uniforms);
+            let mut result = noise::mix_color(surface, cloud_color, cloud_alpha);
+
+            // La nube oscurece la lava, pero conserva una fracción de su brillo nocturno
+            // para que las grietas sigan leyendo debajo de la capa.
+            let lava = color(COLOR_CRACK)
+                * (crack_mask(fragment.object_pos)
+                    * LAVA_GLOW
+                    * (1.0 - diffuse_factor(fragment.normal, uniforms)));
+            result += lava * (clouds * 0.18);
+            result
         }
         _ => Vector3::new(height, height, height),
     }
