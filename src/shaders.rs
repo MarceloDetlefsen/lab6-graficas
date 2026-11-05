@@ -52,6 +52,28 @@ pub fn vertex_shader(vertex: &Vertex, uniforms: &Uniforms) -> Vertex {
     result
 }
 
+/// Vector desde la superficie hacia la cámara, en espacio mundo.
+pub fn surface_view(fragment: &Fragment, uniforms: &Uniforms) -> Vector3 {
+    (uniforms.camera_pos - fragment.world_pos).normalize()
+}
+
+/// Coseno de vista radial. El valor absoluto compensa que el z-buffer usa
+/// menor z como más cercano mientras la cámara ortográfica está en +z; la
+/// cara visible tiene entonces la normal opuesta al vector hacia la cámara.
+pub fn surface_mu(fragment: &Fragment, uniforms: &Uniforms) -> f32 {
+    fragment
+        .normal
+        .normalize()
+        .dot(surface_view(fragment, uniforms))
+        .abs()
+        .clamp(0.0, 1.0)
+}
+
+/// Difusa con light_dir apuntando desde la superficie hacia la fuente.
+pub fn diffuse_factor(normal: Vector3, uniforms: &Uniforms) -> f32 {
+    normal.normalize().dot(uniforms.light_dir).max(0.0)
+}
+
 pub fn fragment_shader(fragment: &Fragment, shader: Shader, uniforms: &Uniforms) -> Vector3 {
     if uniforms.debug_noise {
         let sample_position = fragment.object_pos.normalize() * uniforms.noise_frequency;

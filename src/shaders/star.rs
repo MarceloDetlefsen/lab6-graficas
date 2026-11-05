@@ -4,6 +4,7 @@ use raylib::prelude::Vector3;
 
 use crate::fragment::Fragment;
 use crate::noise;
+use crate::shaders::surface_mu;
 use crate::Uniforms;
 
 // Frecuencia espacial de la granulación: valores altos producen grano más fino.
@@ -43,16 +44,6 @@ pub const PALETTE_WHITE_PINK: [f32; 3] = [1.00, 0.88, 0.96];
 pub const PALETTE_MAGENTA: [f32; 3] = [0.95, 0.15, 0.75];
 pub const PALETTE_VIOLET: [f32; 3] = [0.38, 0.08, 0.65];
 pub const PALETTE_INDIGO: [f32; 3] = [0.06, 0.02, 0.18];
-
-fn surface_mu(fragment: &Fragment, uniforms: &Uniforms) -> f32 {
-    let normal = fragment.normal.normalize();
-    let view = (uniforms.camera_pos - fragment.world_pos).normalize();
-    // El z-buffer actual conserva menor z como más cercano, mientras la cámara
-    // ortográfica está ubicada en +z. La cara visible queda con la normal
-    // invertida respecto de view; el valor absoluto conserva el perfil de disco
-    // (centro caliente, limbo frío) sin cambiar los espacios de los atributos.
-    normal.dot(view).abs().clamp(0.0, 1.0)
-}
 
 fn temperature_from_mu(fragment: &Fragment, uniforms: &Uniforms, mu: f32) -> f32 {
     let limb = LIMB_MIN_TEMPERATURE
