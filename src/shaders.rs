@@ -2,6 +2,7 @@ use raylib::prelude::*;
 
 use crate::Uniforms;
 use crate::fragment::Fragment;
+use crate::noise;
 use crate::vertex::Vertex;
 
 #[allow(dead_code)]
@@ -48,6 +49,12 @@ pub fn vertex_shader(vertex: &Vertex, uniforms: &Uniforms) -> Vertex {
 }
 
 pub fn fragment_shader(fragment: &Fragment, shader: Shader, uniforms: &Uniforms) -> Vector3 {
+    if uniforms.debug_noise {
+        let sample_position = fragment.object_pos.normalize() * uniforms.noise_frequency;
+        let value = noise::fbm(sample_position, 5, 2.0, 0.5);
+        return Vector3::new(value, value, value);
+    }
+
     let base_color = match shader {
         Shader::Star => Vector3::new(1.0, 0.55, 0.08),
         Shader::Rocky => Vector3::new(0.45, 0.20, 0.08),

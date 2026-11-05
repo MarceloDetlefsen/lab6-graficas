@@ -24,6 +24,8 @@ pub struct Uniforms {
     pub time: f32,
     pub light_dir: Vector3,
     pub camera_pos: Vector3,
+    pub debug_noise: bool,
+    pub noise_frequency: f32,
 }
 
 fn next_capture_path() -> PathBuf {
@@ -120,6 +122,8 @@ fn main() {
     let mut zoom = 1.0_f32;
     let mut time = 0.0_f32;
     let mut shader = Shader::Rocky;
+    let mut debug_noise = false;
+    let mut noise_frequency = 4.0_f32;
 
     while !window.window_should_close() {
         time += window.get_frame_time();
@@ -137,6 +141,15 @@ fn main() {
         }
         if window.is_key_pressed(KeyboardKey::KEY_THREE) {
             shader = Shader::GasGiant;
+        }
+        if window.is_key_pressed(KeyboardKey::KEY_D) {
+            debug_noise = !debug_noise;
+        }
+        if window.is_key_pressed(KeyboardKey::KEY_LEFT_BRACKET) {
+            noise_frequency = (noise_frequency - 0.25).max(0.25);
+        }
+        if window.is_key_pressed(KeyboardKey::KEY_RIGHT_BRACKET) {
+            noise_frequency = (noise_frequency + 0.25).min(20.0);
         }
         let capture_requested = window.is_key_pressed(KeyboardKey::KEY_P);
         if window.is_key_down(KeyboardKey::KEY_LEFT) {
@@ -159,6 +172,8 @@ fn main() {
             time,
             light_dir: Vector3::new(-1.0, -1.0, -1.0).normalize(),
             camera_pos: Vector3::zero(),
+            debug_noise,
+            noise_frequency,
         };
 
         framebuffer.clear();
@@ -168,6 +183,13 @@ fn main() {
             framebuffer.render_to_file(capture_path.to_str().expect("Ruta de captura inválida"));
             println!("Captura guardada en {}", capture_path.display());
         }
-        framebuffer.draw_in_window(&mut window, &thread, shader_name(shader));
+        let debug_label = if debug_noise { " | DEBUG FBM" } else { "" };
+        let label = format!(
+            "{}{} | Noise freq: {:.2}",
+            shader_name(shader),
+            debug_label,
+            noise_frequency,
+        );
+        framebuffer.draw_in_window(&mut window, &thread, &label);
     }
 }
