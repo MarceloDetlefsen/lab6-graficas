@@ -15,11 +15,11 @@ pub const H_HIGH: f32 = 0.717;
 // Factor anisotrópico: valores mayores alargan las vetas paralelas sobre el eje Y.
 pub const VEIN_STRETCH: f32 = 5.5;
 // Amplitud del domain warp; valores altos curvan pero también pueden disolver vetas.
-pub const WARP_AMP: f32 = 0.08;
+pub const WARP_AMP: f32 = 0.13;
 // Frecuencia del ruido que deforma el dominio.
 pub const WARP_FREQ: f32 = 1.25;
 // Frecuencia de la máscara de vegetación de baja frecuencia.
-pub const BIOME_FREQ: f32 = 1.8;
+pub const BIOME_FREQ: f32 = 3.2;
 // Umbral alto que limita la vegetación a regiones aisladas.
 pub const BIOME_THRESHOLD: f32 = 0.58;
 // Suavidad del umbral de vegetación.
@@ -36,6 +36,8 @@ pub const RIDGE_SHARPNESS: f32 = 4.0;
 pub const RIDGE_DETAIL_AMP: f32 = 0.18;
 // Frecuencia de la capa de vetas finas; valores mayores producen líneas numerosas.
 pub const RIDGE_DETAIL_FREQ: f32 = 5.0;
+// Ángulo del eje de estiramiento para que las vetas crucen el disco en diagonal.
+pub const VEIN_ANGLE: f32 = 0.52;
 // Nivel de altura por debajo del cual aparecen los mares ácidos, como acento pequeño.
 pub const SEA_LEVEL: f32 = 0.03;
 // Color de las cuencas más bajas.
@@ -55,9 +57,11 @@ pub const COLOR_CRACK: [f32; 3] = [1.00, 0.65, 0.12];
 // Iluminación mínima para conservar detalle en el lado oscuro.
 pub const AMBIENT: f32 = 0.15;
 // Separación de las muestras de altura usadas para estimar el gradiente.
-pub const BUMP_DELTA: f32 = 0.006;
+pub const BUMP_DELTA: f32 = 0.008;
 // Fuerza del relieve sobre la normal; valores altos hacen más marcado el modelado.
-pub const BUMP_STRENGTH: f32 = 0.72;
+pub const BUMP_STRENGTH: f32 = 0.28;
+// Atenuación adicional del gradiente para que el relieve no produzca dientes.
+pub const BUMP_GRADIENT_SCALE: f32 = 0.35;
 // Exponente del reflejo concentrado de los mares ácidos.
 pub const SEA_SPEC_POWER: f32 = 48.0;
 // Intensidad máxima del reflejo especular del mar.
@@ -66,14 +70,14 @@ pub const SEA_SPEC_STRENGTH: f32 = 0.8;
 pub const LAVA_GLOW: f32 = 0.75;
 // Centros de los tres remolinos locales que curvan las vetas cercanas.
 pub const SWIRL_CENTERS: [[f32; 3]; 3] = [
-    [0.25, 0.45, 0.80],
-    [-0.50, -0.20, 0.70],
-    [0.55, -0.50, -0.40],
+    [-0.35, 0.35, -0.78],
+    [0.35, 0.05, -0.82],
+    [0.05, -0.55, -0.68],
 ];
 // Ángulo máximo de rotación de cada remolino en radianes.
-pub const SWIRL_STRENGTH: f32 = 0.75;
+pub const SWIRL_STRENGTH: f32 = 1.85;
 // Radio de influencia de los remolinos en el dominio normalizado.
-pub const SWIRL_RADIUS: f32 = 0.32;
+pub const SWIRL_RADIUS: f32 = 0.42;
 
 static PRINTED_STATS: Once = Once::new();
 
@@ -97,14 +101,24 @@ fn swirl_domain(mut p: Vector3) -> Vector3 {
     p
 }
 
-fn raw_height_field(object_pos: Vector3) -> f32 {
+fn terrain_domain(object_pos: Vector3) -> Vector3 {
     let p = swirl_domain(object_pos.normalize());
     let warp = noise::fbm(p * WARP_FREQ, 3, 2.0, 0.5) * 2.0 - 1.0;
-    let warped = Vector3::new(
-        p.x + warp * WARP_AMP,
-        p.y / VEIN_STRETCH + warp * WARP_AMP * 0.5,
-        p.z + warp * WARP_AMP,
+    let (sin_angle, cos_angle) = VEIN_ANGLE.sin_cos();
+    let rotated = Vector3::new(
+        p.x * cos_angle - p.y * sin_angle,
+        p.x * sin_angle + p.y * cos_angle,
+        p.z,
     );
+    Vector3::new(
+        rotated.x + warp * WARP_AMP,
+        rotated.y / VEIN_STRETCH + warp * WARP_AMP * 0.5,
+        rotated.z + warp * WARP_AMP,
+    )
+}
+
+fn raw_height_field(object_pos: Vector3) -> f32 {
+    let warped = terrain_domain(object_pos);
     let broad_ridges = noise::ridged(warped, TERRAIN_OCTAVES, 2.0, 0.5).powf(RIDGE_SHARPNESS);
     let fine_ridges = noise::ridged(warped * RIDGE_DETAIL_FREQ, 3, 2.0, 0.5)
         .powf(RIDGE_SHARPNESS);
@@ -112,13 +126,7 @@ fn raw_height_field(object_pos: Vector3) -> f32 {
 }
 
 fn fine_ridge_field(object_pos: Vector3) -> f32 {
-    let p = swirl_domain(object_pos.normalize());
-    let warp = noise::fbm(p * WARP_FREQ, 3, 2.0, 0.5) * 2.0 - 1.0;
-    let warped = Vector3::new(
-        p.x + warp * WARP_AMP,
-        p.y / VEIN_STRETCH + warp * WARP_AMP * 0.5,
-        p.z + warp * WARP_AMP,
-    );
+    let warped = terrain_domain(object_pos);
     noise::ridged(warped * RIDGE_DETAIL_FREQ, 3, 2.0, 0.5).powf(RIDGE_SHARPNESS)
 }
 
@@ -129,6 +137,12 @@ pub fn height_field(object_pos: Vector3) -> f32 {
 pub fn biome_mask(object_pos: Vector3) -> f32 {
     let value = noise::fbm(object_pos.normalize() * BIOME_FREQ, 3, 2.0, 0.5);
     noise::smoothstep(BIOME_THRESHOLD, BIOME_THRESHOLD + BIOME_SOFTNESS, value)
+}
+
+fn sea_mask(object_pos: Vector3, height: f32) -> f32 {
+    let basin = 1.0 - noise::smoothstep(SEA_LEVEL, SEA_LEVEL + 0.09, height);
+    let patches = noise::fbm(object_pos.normalize() * 4.5, 3, 2.0, 0.5);
+    basin * noise::smoothstep(0.46, 0.62, patches)
 }
 
 pub fn crack_mask(object_pos: Vector3) -> f32 {
@@ -152,6 +166,7 @@ fn print_statistics_once() {
         let mut biome_values = Vec::with_capacity(sample_count);
         let mut fine_ridges = Vec::with_capacity(sample_count);
         let mut height_values = Vec::with_capacity(sample_count);
+        let mut sea_values = Vec::with_capacity(sample_count);
 
         for i in 0..sample_count {
             let y = 1.0 - (i as f32 + 0.5) * 2.0 / sample_count as f32;
@@ -160,7 +175,9 @@ fn print_statistics_once() {
             let point = Vector3::new(radius * angle.cos(), y, radius * angle.sin());
             let raw = raw_height_field(point);
             raw_values.push(raw);
-            height_values.push(height_field(point));
+            let height = height_field(point);
+            height_values.push(height);
+            sea_values.push(sea_mask(point, height));
             biome_values.push(biome_mask(point));
             fine_ridges.push(fine_ridge_field(point));
         }
@@ -180,6 +197,7 @@ fn print_statistics_once() {
         biome_values.sort_by(f32::total_cmp);
         fine_ridges.sort_by(f32::total_cmp);
         height_values.sort_by(f32::total_cmp);
+        sea_values.sort_by(f32::total_cmp);
         println!(
             "Rocky bioma mask: p50={:.3}, p75={:.3}, p95={:.3}, max={:.3}",
             percentile(&biome_values, 0.50),
@@ -201,7 +219,7 @@ fn print_statistics_once() {
             .iter()
             .filter(|&&value| noise::smoothstep(CRACK_THRESHOLD, CRACK_THRESHOLD + CRACK_SOFTNESS, value) > 0.5)
             .count();
-        let sea_coverage = height_values.iter().filter(|&&value| value < SEA_LEVEL).count();
+        let sea_coverage = sea_values.iter().filter(|&&value| value > 0.5).count();
         let low_height_coverage = height_values.iter().filter(|&&value| value < 0.2).count();
         println!(
             "Rocky cobertura: mar={:.1}%, bioma={:.1}%, grietas={:.1}%, h<0.2={:.1}%",
@@ -218,9 +236,7 @@ fn color(values: [f32; 3]) -> Vector3 {
 }
 
 fn height_color(height: f32) -> Vector3 {
-    if height < SEA_LEVEL {
-        color(COLOR_SEA)
-    } else if height < 0.45 {
+    if height < 0.45 {
         noise::mix_color(
             color(COLOR_ROCK_SHADOW),
             color(COLOR_AMBER),
@@ -237,11 +253,13 @@ fn height_color(height: f32) -> Vector3 {
 
 fn surface_color(object_pos: Vector3, height: f32) -> Vector3 {
     let base = height_color(height);
+    let sea = sea_mask(object_pos, height);
+    let with_sea = noise::mix_color(base, color(COLOR_SEA), sea);
     let biome = biome_mask(object_pos);
     let pink_noise = noise::fbm(object_pos.normalize() * 8.0, 3, 2.0, 0.5);
     let pink_amount = noise::smoothstep(0.55, 0.72, pink_noise);
     let biome_color = noise::mix_color(color(COLOR_TOXIC_GREEN), color(COLOR_PINK), pink_amount);
-    let with_biome = noise::mix_color(base, biome_color, biome);
+    let with_biome = noise::mix_color(with_sea, biome_color, biome);
     noise::mix_color(with_biome, color(COLOR_CRACK), crack_mask(object_pos))
 }
 
@@ -263,10 +281,11 @@ fn bumped_normal(fragment: &Fragment, uniforms: &Uniforms, height: f32) -> Vecto
         (height_field(p + dx) - height) / BUMP_DELTA,
         (height_field(p + dy) - height) / BUMP_DELTA,
         (height_field(p + dz) - height) / BUMP_DELTA,
-    );
+    ) * BUMP_GRADIENT_SCALE;
     // La altura aumenta en la dirección del gradiente; la normal de una superficie
     // elevada se inclina contra él. Este signo mantiene las crestas claras hacia la luz.
-    let object_normal = (p - gradient * BUMP_STRENGTH).normalize();
+    let bump_fade = noise::smoothstep(0.12, 0.48, crate::shaders::surface_mu(fragment, uniforms));
+    let object_normal = (p - gradient * BUMP_STRENGTH * bump_fade).normalize();
     model_normal(&uniforms.model_matrix, object_normal)
 }
 
@@ -276,7 +295,8 @@ fn lit_surface_color(
     height: f32,
     base: Vector3,
 ) -> Vector3 {
-    let normal = if height < SEA_LEVEL {
+    let sea = sea_mask(fragment.object_pos, height);
+    let normal = if sea > 0.5 {
         fragment.normal.normalize()
     } else {
         bumped_normal(fragment, uniforms, height)
@@ -284,7 +304,6 @@ fn lit_surface_color(
     let diffuse = diffuse_factor(normal, uniforms);
     let mut result = base * (AMBIENT + (1.0 - AMBIENT) * diffuse);
 
-    let sea_edge = noise::smoothstep(SEA_LEVEL, SEA_LEVEL + 0.12, height);
     let view = surface_view(fragment, uniforms);
     let half_vector = (uniforms.light_dir + view).normalize();
     let specular = normal
@@ -292,7 +311,7 @@ fn lit_surface_color(
         .max(0.0)
         .powf(SEA_SPEC_POWER)
         * SEA_SPEC_STRENGTH
-        * (1.0 - sea_edge);
+        * sea;
     result += Vector3::new(1.0, 1.0, 1.0) * specular;
 
     let crack = crack_mask(fragment.object_pos);
