@@ -9,35 +9,43 @@ use crate::shaders::{diffuse_factor, surface_mu};
 use crate::Uniforms;
 
 // Frecuencia del seno latitudinal; valores altos producen más bandas.
-pub const BAND_FREQ: f32 = 9.0;
+pub const BAND_FREQ: f32 = 6.0;
 // Frecuencia del primer warp, responsable de curvas amplias.
 pub const WARP1_FREQ: f32 = 1.35;
 // Amplitud del primer warp.
-pub const WARP1_AMP: f32 = 0.34;
+pub const WARP1_AMP: f32 = 0.48;
 // Frecuencia del segundo warp, responsable del marmoleado líquido fino.
-pub const WARP2_FREQ: f32 = 3.8;
+pub const WARP2_FREQ: f32 = 7.6;
 // Amplitud menor de la segunda pasada de warp.
-pub const WARP2_AMP: f32 = 0.13;
+pub const WARP2_AMP: f32 = 0.20;
+// Frecuencia de la tercera pasada, usada solo para filamentos finos.
+pub const WARP3_FREQ: f32 = 14.0;
+// Amplitud baja de la tercera pasada para evitar bandas rígidas.
+pub const WARP3_AMP: f32 = 0.055;
 // Percentil bajo del patrón usado para expandir el contraste a [0,1].
 pub const PATTERN_LOW: f32 = 0.18;
 // Percentil alto del patrón usado para expandir el contraste a [0,1].
 pub const PATTERN_HIGH: f32 = 0.82;
 // Centro normalizado del vórtice, ubicado hacia el hemisferio frontal (-z).
-pub const VORTEX_CENTER: [f32; 3] = [0.20, 0.12, -0.97];
+pub const VORTEX_CENTER: [f32; 3] = [-0.22, -0.22, -0.95];
 // Radio angular aproximado del gran vórtice naranja.
-pub const VORTEX_RADIUS: f32 = 0.45;
+pub const VORTEX_RADIUS: f32 = 0.60;
+// Radio de influencia de la rotación sobre las bandas vecinas.
+pub const VORTEX_INFLUENCE_RADIUS: f32 = 1.20;
 // Giro de las coordenadas dentro del vórtice; valores altos enrollan más las bandas.
-pub const VORTEX_STRENGTH: f32 = 4.5;
+pub const VORTEX_STRENGTH: f32 = 3.4;
 // Frecuencia del ruido que rompe el borde circular del vórtice.
 pub const VORTEX_EDGE_FREQ: f32 = 4.5;
+// Amplitud de la perturbación de distancia que vuelve orgánico el borde.
+pub const VORTEX_EDGE_NOISE: f32 = 0.22;
 // Verde muy pálido de las zonas de patrón más claras.
-pub const COLOR_GREEN_PALE: [f32; 3] = [0.75, 0.95, 0.55];
+pub const COLOR_GREEN_PALE: [f32; 3] = [0.55, 0.82, 0.28];
 // Verde brillante dominante.
-pub const COLOR_GREEN_BRIGHT: [f32; 3] = [0.35, 0.85, 0.15];
+pub const COLOR_GREEN_BRIGHT: [f32; 3] = [0.30, 0.72, 0.10];
 // Verde oliva de las bandas intermedias.
-pub const COLOR_GREEN_OLIVE: [f32; 3] = [0.25, 0.40, 0.10];
+pub const COLOR_GREEN_OLIVE: [f32; 3] = [0.18, 0.35, 0.07];
 // Verde profundo de las sombras.
-pub const COLOR_GREEN_DARK: [f32; 3] = [0.05, 0.15, 0.05];
+pub const COLOR_GREEN_DARK: [f32; 3] = [0.07, 0.14, 0.04];
 // Naranja rojizo del vórtice.
 pub const COLOR_VORTEX: [f32; 3] = [0.95, 0.40, 0.10];
 // Sombra rojiza interna que da volumen y lectura líquida al vórtice.
@@ -62,7 +70,16 @@ fn domain_warp(object_pos: Vector3, time: f32) -> Vector3 {
     let warp1 = noise::fbm4(p * WARP1_FREQ, time * WARP1_SPEED, 3, 2.0, 0.5) * 2.0 - 1.0;
     let first = p + Vector3::new(warp1, warp1 * 0.72, -warp1 * 0.58) * WARP1_AMP;
     let warp2 = noise::fbm4(first * WARP2_FREQ, time * WARP2_SPEED, 3, 2.0, 0.5) * 2.0 - 1.0;
-    first + Vector3::new(-warp2 * 0.62, warp2, warp2 * 0.48) * WARP2_AMP
+    let second = first + Vector3::new(-warp2 * 0.62, warp2, warp2 * 0.48) * WARP2_AMP;
+    let warp3 = noise::fbm4(
+        second * WARP3_FREQ,
+        time * WARP2_SPEED * 1.45,
+        3,
+        2.0,
+        0.5,
+    ) * 2.0
+        - 1.0;
+    second + Vector3::new(warp3 * 0.75, -warp3 * 0.45, warp3 * 0.35) * WARP3_AMP
 }
 
 fn vortex_domain(p: Vector3, time: f32) -> Vector3 {
@@ -74,12 +91,8 @@ fn vortex_domain(p: Vector3, time: f32) -> Vector3 {
     .normalize();
     let offset = p - center;
     let distance = offset.length();
-    let falloff = (1.0 - distance / VORTEX_RADIUS).clamp(0.0, 1.0);
-    if falloff <= 0.0 {
-        return p;
-    }
-
-    let angle = VORTEX_STRENGTH * falloff * falloff + time * VORTEX_SPIN * falloff;
+    let falloff = (-distance / VORTEX_INFLUENCE_RADIUS).exp();
+    let angle = VORTEX_STRENGTH * falloff + time * VORTEX_SPIN * falloff;
     let (sin_angle, cos_angle) = angle.sin_cos();
     let cross = Vector3::new(
         center.y * offset.z - center.z * offset.y,
@@ -93,8 +106,8 @@ fn raw_pattern(object_pos: Vector3, time: f32) -> f32 {
     let warped = domain_warp(object_pos, time);
     let latitude = warped.y.clamp(-1.0, 1.0);
     let bands = (latitude * BAND_FREQ).sin() * 0.5 + 0.5;
-    let fluid_noise = noise::fbm(warped * 2.2, 3, 2.0, 0.5);
-    bands * 0.68 + fluid_noise * 0.32
+    let fluid_noise = noise::fbm4(warped * 2.2, time * WARP1_SPEED, 3, 2.0, 0.5);
+    bands * 0.52 + fluid_noise * 0.48
 }
 
 pub fn band_pattern_at(object_pos: Vector3, time: f32) -> f32 {
@@ -142,14 +155,13 @@ fn vortex_mask(object_pos: Vector3) -> f32 {
     )
     .normalize();
     let distance = (p - center).length();
-    let radial = 1.0 - noise::smoothstep(VORTEX_RADIUS * 0.68, VORTEX_RADIUS, distance);
     let edge_noise = noise::fbm(p * VORTEX_EDGE_FREQ, 3, 2.0, 0.5);
-    let irregular_edge = noise::smoothstep(
-        0.24,
-        0.72,
-        radial + (edge_noise - 0.5) * 0.42,
-    );
-    irregular_edge * radial
+    let perturbed_distance = distance + (edge_noise - 0.5) * VORTEX_EDGE_NOISE;
+    1.0 - noise::smoothstep(
+        VORTEX_RADIUS * 0.42,
+        VORTEX_RADIUS * 1.30,
+        perturbed_distance,
+    )
 }
 
 fn surface_color(object_pos: Vector3, pattern: f32, time: f32) -> Vector3 {
@@ -167,7 +179,9 @@ fn surface_color(object_pos: Vector3, pattern: f32, time: f32) -> Vector3 {
         color(COLOR_VORTEX),
         noise::smoothstep(0.30, 0.70, detail),
     );
-    noise::mix_color(base, vortex_color, vortex)
+    let green_filaments = noise::smoothstep(0.40, 0.68, detail);
+    let orange_mix = vortex * (0.35 + 0.65 * green_filaments);
+    noise::mix_color(base, vortex_color, orange_mix)
 }
 
 fn percentile(sorted: &[f32], fraction: f32) -> f32 {
