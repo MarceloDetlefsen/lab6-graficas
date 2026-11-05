@@ -16,12 +16,16 @@ pub const GRANULATION_AMP: f32 = 0.12;
 pub const SPOT_FREQ: f32 = 2.5;
 // Reservada para la animación de la Fase 2: velocidad temporal de las manchas.
 pub const SPOT_SPEED: f32 = 0.15;
-// Umbral de ruido a partir del cual comienzan las manchas oscuras.
-pub const SPOT_THRESHOLD: f32 = 0.62;
+// Umbral de ruido a partir del cual comienzan las manchas oscuras aisladas.
+pub const SPOT_THRESHOLD: f32 = 0.68;
 // Suavidad del borde de las manchas.
-pub const SPOT_SOFTNESS: f32 = 0.12;
+pub const SPOT_SOFTNESS: f32 = 0.10;
 // Exponente del oscurecimiento hacia el borde del disco.
-pub const LIMB_EXPONENT: f32 = 0.55;
+pub const LIMB_EXPONENT: f32 = 2.5;
+// Temperatura mínima del disco en el limbo antes de aplicar granulación y manchas.
+pub const LIMB_MIN_TEMPERATURE: f32 = 0.30;
+// Cuánto oscurece cada mancha después del smoothstep.
+pub const SPOT_DARKNESS: f32 = 0.55;
 // Exponente del anillo de corona de la Fase 2.
 pub const CORONA_EXPONENT: f32 = 5.0;
 // Intensidad del anillo de corona de la Fase 2.
@@ -32,19 +36,29 @@ pub const PALETTE_MAGENTA: [f32; 3] = [0.90, 0.05, 0.55];
 pub const PALETTE_VIOLET: [f32; 3] = [0.32, 0.02, 0.55];
 pub const PALETTE_INDIGO: [f32; 3] = [0.015, 0.005, 0.08];
 
-pub fn temperature(fragment: &Fragment, uniforms: &Uniforms) -> f32 {
+fn surface_mu(fragment: &Fragment, uniforms: &Uniforms) -> f32 {
     let normal = fragment.normal.normalize();
     let view = (uniforms.camera_pos - fragment.world_pos).normalize();
-    let mu = normal.dot(view).clamp(0.0, 1.0);
-    let limb = mu.powf(LIMB_EXPONENT);
+    // El z-buffer actual conserva menor z como más cercano, mientras la cámara
+    // ortográfica está ubicada en +z. La cara visible queda con la normal
+    // invertida respecto de view; el valor absoluto conserva el perfil de disco
+    // (centro caliente, limbo frío) sin cambiar los espacios de los atributos.
+    normal.dot(view).abs().clamp(0.0, 1.0)
+}
+
+pub fn temperature(fragment: &Fragment, uniforms: &Uniforms) -> f32 {
+    let mu = surface_mu(fragment, uniforms);
+    let limb = LIMB_MIN_TEMPERATURE
+        + (1.0 - LIMB_MIN_TEMPERATURE) * mu.powf(LIMB_EXPONENT);
 
     let surface_position = fragment.object_pos.normalize();
-    let granulation = noise::fbm(
+    let granulation_noise = noise::fbm(
         surface_position * GRANULATION_FREQ,
         4,
         2.0,
         0.5,
-    ) - 0.5;
+    );
+    let granulation = granulation_noise * 2.0 - 1.0;
     let mut value = limb + granulation * GRANULATION_AMP;
 
     let spots = noise::fbm(surface_position * SPOT_FREQ, 3, 2.0, 0.5);
@@ -53,7 +67,7 @@ pub fn temperature(fragment: &Fragment, uniforms: &Uniforms) -> f32 {
         SPOT_THRESHOLD + SPOT_SOFTNESS,
         spots,
     );
-    value -= spot_mask * 0.45;
+    value -= spot_mask * SPOT_DARKNESS;
 
     value.clamp(0.0, 1.0)
 }
@@ -61,4 +75,48 @@ pub fn temperature(fragment: &Fragment, uniforms: &Uniforms) -> f32 {
 pub fn shade(fragment: &Fragment, uniforms: &Uniforms) -> Vector3 {
     let value = temperature(fragment, uniforms);
     Vector3::new(value, value, value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use raylib::prelude::Matrix;
+
+    fn uniforms(camera_pos: Vector3) -> Uniforms {
+        Uniforms {
+            model_matrix: Matrix::identity(),
+            time: 0.0,
+            light_dir: Vector3::new(0.0, 0.0, -1.0),
+            camera_pos,
+            debug_noise: false,
+            noise_frequency: 4.0,
+        }
+    }
+
+    fn fragment(world_pos: Vector3, normal: Vector3) -> Fragment {
+        Fragment {
+            position: raylib::prelude::Vector2::zero(),
+            object_pos: normal,
+            world_pos,
+            normal,
+            color: Vector3::zero(),
+            depth: 0.0,
+        }
+    }
+
+    #[test]
+    fn visible_disk_mu_runs_from_center_to_limb() {
+        let camera = Vector3::new(0.0, 0.0, 1000.0);
+        let center = surface_mu(
+            &fragment(Vector3::new(0.0, 0.0, -1.0), Vector3::new(0.0, 0.0, -1.0)),
+            &uniforms(camera),
+        );
+        let limb = surface_mu(
+            &fragment(Vector3::new(1.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+            &uniforms(camera),
+        );
+        println!("star mu: center={center:.3}, limb={limb:.3}");
+        assert!(center > 0.99);
+        assert!(limb < 0.01);
+    }
 }
