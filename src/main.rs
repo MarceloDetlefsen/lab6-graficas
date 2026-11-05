@@ -148,7 +148,7 @@ fn main() {
             debug_noise = !debug_noise;
         }
         if window.is_key_pressed(KeyboardKey::KEY_V) {
-            rocky_debug_view = (rocky_debug_view + 1) % 3;
+            rocky_debug_view = (rocky_debug_view + 1) % 4;
         }
         if window.is_key_pressed(KeyboardKey::KEY_LEFT_BRACKET) {
             noise_frequency = (noise_frequency - 0.25).max(0.25);
@@ -194,7 +194,7 @@ fn main() {
             "{}{} | Rocky: {} | Noise freq: {:.2}",
             shader_name(shader),
             debug_label,
-            ["altura", "bioma", "grietas"][rocky_debug_view as usize],
+            ["altura", "bioma", "grietas", "color"][rocky_debug_view as usize],
             noise_frequency,
         );
         framebuffer.draw_in_window(&mut window, &thread, &label);

@@ -3,9 +3,10 @@
 use raylib::prelude::Vector3;
 use std::sync::Once;
 
+use crate::Uniforms;
 use crate::fragment::Fragment;
 use crate::noise;
-use crate::Uniforms;
+use crate::shaders::diffuse_factor;
 
 // Percentil inferior usado para remapear el campo y evitar una masa gris plana.
 pub const H_LOW: f32 = 0.507;
@@ -33,6 +34,24 @@ pub const TERRAIN_OCTAVES: usize = 4;
 pub const RIDGE_SHARPNESS: f32 = 2.5;
 // Amplitud de la capa de detalle de alta frecuencia.
 pub const RIDGE_DETAIL_AMP: f32 = 0.18;
+// Nivel de altura por debajo del cual aparecen los mares ácidos.
+pub const SEA_LEVEL: f32 = 0.15;
+// Color de las cuencas más bajas.
+pub const COLOR_SEA: [f32; 3] = [0.10, 0.75, 0.55];
+// Color de la roca ámbar en alturas bajas.
+pub const COLOR_AMBER: [f32; 3] = [0.45, 0.22, 0.05];
+// Color de la roca naranja en alturas medias-altas.
+pub const COLOR_BURNT_ORANGE: [f32; 3] = [0.85, 0.40, 0.08];
+// Color de las crestas altas y oscuras.
+pub const COLOR_BLUE_VIOLET: [f32; 3] = [0.18, 0.12, 0.32];
+// Color base del bioma Brinstar.
+pub const COLOR_TOXIC_GREEN: [f32; 3] = [0.35, 0.85, 0.20];
+// Toque rosado mezclado dentro del bioma por ruido fino.
+pub const COLOR_PINK: [f32; 3] = [0.90, 0.35, 0.60];
+// Color de las grietas, todavía sin emisión propia en esta fase.
+pub const COLOR_CRACK: [f32; 3] = [1.00, 0.55, 0.10];
+// Iluminación mínima para conservar detalle en el lado oscuro.
+pub const AMBIENT: f32 = 0.15;
 
 static PRINTED_STATS: Once = Once::new();
 
@@ -44,12 +63,9 @@ fn raw_height_field(object_pos: Vector3) -> f32 {
         p.y / VEIN_STRETCH + warp * WARP_AMP * 0.5,
         p.z + warp * WARP_AMP,
     );
-    let broad_ridges = noise::ridged(warped, TERRAIN_OCTAVES, 2.0, 0.5)
-        .powf(RIDGE_SHARPNESS);
-    let fine_ridges = noise::ridged(warped * 3.2, 3, 2.0, 0.5)
-        .powf(RIDGE_SHARPNESS);
-    (broad_ridges * (1.0 - RIDGE_DETAIL_AMP) + fine_ridges * RIDGE_DETAIL_AMP)
-        .clamp(0.0, 1.0)
+    let broad_ridges = noise::ridged(warped, TERRAIN_OCTAVES, 2.0, 0.5).powf(RIDGE_SHARPNESS);
+    let fine_ridges = noise::ridged(warped * 3.2, 3, 2.0, 0.5).powf(RIDGE_SHARPNESS);
+    (broad_ridges * (1.0 - RIDGE_DETAIL_AMP) + fine_ridges * RIDGE_DETAIL_AMP).clamp(0.0, 1.0)
 }
 
 fn fine_ridge_field(object_pos: Vector3) -> f32 {
@@ -74,7 +90,11 @@ pub fn biome_mask(object_pos: Vector3) -> f32 {
 
 pub fn crack_mask(object_pos: Vector3) -> f32 {
     let fine_ridge = fine_ridge_field(object_pos);
-    noise::smoothstep(CRACK_THRESHOLD, CRACK_THRESHOLD + CRACK_SOFTNESS, fine_ridge)
+    noise::smoothstep(
+        CRACK_THRESHOLD,
+        CRACK_THRESHOLD + CRACK_SOFTNESS,
+        fine_ridge,
+    )
 }
 
 fn percentile(sorted: &[f32], fraction: f32) -> f32 {
@@ -88,6 +108,7 @@ fn print_statistics_once() {
         let mut raw_values = Vec::with_capacity(sample_count);
         let mut biome_values = Vec::with_capacity(sample_count);
         let mut fine_ridges = Vec::with_capacity(sample_count);
+        let mut height_values = Vec::with_capacity(sample_count);
 
         for i in 0..sample_count {
             let y = 1.0 - (i as f32 + 0.5) * 2.0 / sample_count as f32;
@@ -96,6 +117,7 @@ fn print_statistics_once() {
             let point = Vector3::new(radius * angle.cos(), y, radius * angle.sin());
             let raw = raw_height_field(point);
             raw_values.push(raw);
+            height_values.push(height_field(point));
             biome_values.push(biome_mask(point));
             fine_ridges.push(fine_ridge_field(point));
         }
@@ -113,6 +135,7 @@ fn print_statistics_once() {
         );
         biome_values.sort_by(f32::total_cmp);
         fine_ridges.sort_by(f32::total_cmp);
+        height_values.sort_by(f32::total_cmp);
         println!(
             "Rocky bioma mask: p50={:.3}, p75={:.3}, p95={:.3}, max={:.3}",
             percentile(&biome_values, 0.50),
@@ -125,17 +148,67 @@ fn print_statistics_once() {
             .iter()
             .filter(|&&value| noise::smoothstep(CRACK_THRESHOLD, CRACK_THRESHOLD + CRACK_SOFTNESS, value) > 0.5)
             .count();
-        println!("Rocky cobertura: bioma={:.1}%, grietas={:.1}%", biome_coverage as f32 * 100.0 / sample_count as f32, crack_coverage as f32 * 100.0 / sample_count as f32);
+        let sea_coverage = height_values.iter().filter(|&&value| value < SEA_LEVEL).count();
+        let low_height_coverage = height_values.iter().filter(|&&value| value < 0.2).count();
+        println!(
+            "Rocky cobertura: mar={:.1}%, bioma={:.1}%, grietas={:.1}%, h<0.2={:.1}%",
+            sea_coverage as f32 * 100.0 / sample_count as f32,
+            biome_coverage as f32 * 100.0 / sample_count as f32,
+            crack_coverage as f32 * 100.0 / sample_count as f32,
+            low_height_coverage as f32 * 100.0 / sample_count as f32,
+        );
     });
+}
+
+fn color(values: [f32; 3]) -> Vector3 {
+    Vector3::new(values[0], values[1], values[2])
+}
+
+fn height_color(height: f32) -> Vector3 {
+    if height < SEA_LEVEL {
+        color(COLOR_SEA)
+    } else if height < 0.45 {
+        noise::mix_color(
+            color(COLOR_AMBER),
+            color(COLOR_BURNT_ORANGE),
+            noise::smoothstep(SEA_LEVEL, 0.45, height),
+        )
+    } else {
+        noise::mix_color(
+            color(COLOR_BURNT_ORANGE),
+            color(COLOR_BLUE_VIOLET),
+            noise::smoothstep(0.45, 1.0, height),
+        )
+    }
+}
+
+fn surface_color(object_pos: Vector3, height: f32) -> Vector3 {
+    let base = height_color(height);
+    let biome = biome_mask(object_pos);
+    let pink_noise = noise::fbm(object_pos.normalize() * 8.0, 3, 2.0, 0.5);
+    let pink_amount = noise::smoothstep(0.55, 0.72, pink_noise);
+    let biome_color = noise::mix_color(color(COLOR_TOXIC_GREEN), color(COLOR_PINK), pink_amount);
+    let with_biome = noise::mix_color(base, biome_color, biome);
+    noise::mix_color(with_biome, color(COLOR_CRACK), crack_mask(object_pos))
 }
 
 pub fn shade(fragment: &Fragment, uniforms: &Uniforms) -> Vector3 {
     print_statistics_once();
     let height = height_field(fragment.object_pos);
-    let value = match uniforms.rocky_debug_view {
-        1 => biome_mask(fragment.object_pos),
-        2 => crack_mask(fragment.object_pos),
-        _ => height,
-    };
-    Vector3::new(value, value, value)
+    match uniforms.rocky_debug_view {
+        1 => {
+            let value = biome_mask(fragment.object_pos);
+            Vector3::new(value, value, value)
+        }
+        2 => {
+            let value = crack_mask(fragment.object_pos);
+            Vector3::new(value, value, value)
+        }
+        3 => {
+            let base = surface_color(fragment.object_pos, height);
+            let diffuse = diffuse_factor(fragment.normal, uniforms);
+            base * (AMBIENT + (1.0 - AMBIENT) * diffuse)
+        }
+        _ => Vector3::new(height, height, height),
+    }
 }
