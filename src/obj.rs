@@ -1,12 +1,14 @@
 #![allow(dead_code)]
 
+use raylib::prelude::Vector3;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
-use raylib::prelude::Vector3;
 
 #[derive(Debug, Clone)]
 pub struct Obj {
     pub vertices: Vec<Vector3>,
+    pub vertex_normals: Vec<Vector3>,
+    pub source_normals: Vec<Vector3>,
     pub indices: Vec<usize>,
 }
 
@@ -14,6 +16,8 @@ impl Obj {
     pub fn new() -> Self {
         Self {
             vertices: Vec::new(),
+            vertex_normals: Vec::new(),
+            source_normals: Vec::new(),
             indices: Vec::new(),
         }
     }
@@ -45,13 +49,15 @@ impl Obj {
     }
 }
 
-/// Carga un archivo OBJ reconociendo vértices ('v') y caras ('f').
+/// Carga un archivo OBJ reconociendo vértices, normales fuente y caras.
 pub fn load_obj(path: &str) -> io::Result<Obj> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
 
     let mut vertices = Vec::new();
+    let mut source_normals = Vec::new();
     let mut indices = Vec::new();
+    let mut faces = Vec::new();
 
     for line in reader.lines() {
         let line = line?;
@@ -70,8 +76,9 @@ pub fn load_obj(path: &str) -> io::Result<Obj> {
 
         match prefix {
             "v" => {
-                // Paso 3: Cargar vértices (x, y, z)
-                if let (Some(x_str), Some(y_str), Some(z_str)) = (parts.next(), parts.next(), parts.next()) {
+                if let (Some(x_str), Some(y_str), Some(z_str)) =
+                    (parts.next(), parts.next(), parts.next())
+                {
                     if let (Ok(x), Ok(y), Ok(z)) = (
                         x_str.parse::<f32>(),
                         y_str.parse::<f32>(),
@@ -81,25 +88,95 @@ pub fn load_obj(path: &str) -> io::Result<Obj> {
                     }
                 }
             }
-            "f" => {
-                // Paso 4: Cargar caras e índices
-                // Soporta formatos: "f 1 2 3", "f 1/2/3 4/5/6 7/8/9", "f 1//3 ...", etc.
-                for part in parts {
-                    // Tomar únicamente el primer valor antes del primer '/'
-                    let vertex_idx_str = part.split('/').next().unwrap_or("");
-                    if let Ok(idx_1based) = vertex_idx_str.parse::<usize>() {
-                        // El formato OBJ comienza en 1; Rust Vec en 0
-                        if idx_1based > 0 {
-                            indices.push(idx_1based - 1);
-                        }
+            "vn" => {
+                if let (Some(x_str), Some(y_str), Some(z_str)) =
+                    (parts.next(), parts.next(), parts.next())
+                {
+                    if let (Ok(x), Ok(y), Ok(z)) = (
+                        x_str.parse::<f32>(),
+                        y_str.parse::<f32>(),
+                        z_str.parse::<f32>(),
+                    ) {
+                        source_normals.push(Vector3::new(x, y, z));
                     }
                 }
             }
+            "f" => {
+                let mut face = Vec::new();
+                for part in parts {
+                    let vertex_idx_str = part.split('/').next().unwrap_or("");
+                    if let Ok(idx_1based) = vertex_idx_str.parse::<usize>() {
+                        if idx_1based > 0 {
+                            let index = idx_1based - 1;
+                            indices.push(index);
+                            face.push(index);
+                        }
+                    }
+                }
+                if face.len() >= 3 {
+                    faces.push(face);
+                }
+            }
             _ => {
-                // Ignorar normales (vn), texturas (vt), materiales, objetos, etc.
+                // Las coordenadas de textura y metadatos no son necesarios aquí.
             }
         }
     }
 
-    Ok(Obj { vertices, indices })
+    let centroid = vertices
+        .iter()
+        .copied()
+        .fold(Vector3::zero(), |sum, position| sum + position)
+        * (1.0 / vertices.len().max(1) as f32);
+    let centered_at_origin = centroid.length() <= 1e-5;
+    let vertex_normals = if centered_at_origin {
+        vertices
+            .iter()
+            .map(|position| position.normalize())
+            .collect()
+    } else {
+        let mut accumulated = vec![Vector3::zero(); vertices.len()];
+        for face in faces {
+            let [a, b, c] = [face[0], face[1], face[2]];
+            if a >= vertices.len() || b >= vertices.len() || c >= vertices.len() {
+                continue;
+            }
+            let face_normal = (vertices[b] - vertices[a]).cross(vertices[c] - vertices[a]);
+            for &index in &face {
+                if index < accumulated.len() {
+                    accumulated[index] += face_normal;
+                }
+            }
+        }
+        accumulated
+            .into_iter()
+            .map(|normal| normal.normalize())
+            .collect()
+    };
+
+    Ok(Obj {
+        vertices,
+        vertex_normals,
+        source_normals,
+        indices,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_obj;
+
+    #[test]
+    fn sphere_counts_and_smooth_normals_are_valid() {
+        let obj = load_obj("assets/sphere.obj").expect("sphere OBJ should load");
+
+        assert_eq!(obj.vertices.len(), 98);
+        assert_eq!(obj.source_normals.len(), 192);
+        assert_eq!(obj.indices.len(), 192 * 3);
+        assert_eq!(obj.vertex_normals.len(), obj.vertices.len());
+        assert!(obj
+            .vertex_normals
+            .iter()
+            .all(|normal| (normal.length() - 1.0).abs() <= 1e-4));
+    }
 }

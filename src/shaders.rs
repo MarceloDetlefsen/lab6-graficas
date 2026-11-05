@@ -19,6 +19,18 @@ pub fn vertex_shader(vertex: &Vertex, uniforms: &Uniforms) -> Vertex {
 
     let mut result = vertex.clone();
     result.transformed_position = Vector3::new(transformed.x, transformed.y, transformed.z);
+    result.transformed_normal = Vector3::new(
+        uniforms.model_matrix.m0 * vertex.normal.x
+            + uniforms.model_matrix.m4 * vertex.normal.y
+            + uniforms.model_matrix.m8 * vertex.normal.z,
+        uniforms.model_matrix.m1 * vertex.normal.x
+            + uniforms.model_matrix.m5 * vertex.normal.y
+            + uniforms.model_matrix.m9 * vertex.normal.z,
+        uniforms.model_matrix.m2 * vertex.normal.x
+            + uniforms.model_matrix.m6 * vertex.normal.y
+            + uniforms.model_matrix.m10 * vertex.normal.z,
+    )
+    .normalize();
     result
 }
 

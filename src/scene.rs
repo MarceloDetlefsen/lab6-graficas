@@ -36,7 +36,7 @@ pub fn build_triangles(obj: &Obj, uniforms: &Uniforms) -> Vec<[Vertex; 3]> {
             1 => Vector3::new(0.0, 1.0, 0.0),
             _ => Vector3::new(0.0, 0.0, 1.0),
         };
-        Vertex::new_with_color(obj.vertices[index], color)
+        Vertex::new(obj.vertices[index], obj.vertex_normals[index], color)
     }).map(|vertex| vertex_shader(&vertex, uniforms)).collect();
     primitive_assembly(&vertices)
 }

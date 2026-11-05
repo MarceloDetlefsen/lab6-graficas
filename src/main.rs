@@ -51,7 +51,13 @@ fn main() {
     let obj = load_obj(obj_path).expect("No se pudo cargar assets/sphere.obj");
     println!("Modelo cargado: '{obj_path}'");
     println!("  Vértices:   {}", obj.vertices.len());
+    println!("  Normales fuente (vn): {}", obj.source_normals.len());
     println!("  Triángulos: {}", obj.indices.len() / 3);
+    let normals_are_unit = obj
+        .vertex_normals
+        .iter()
+        .all(|normal| (normal.length() - 1.0).abs() <= 1e-4);
+    println!("  Normales suaves unitarias (~1): {normals_are_unit}");
 
     let mut framebuffer = Framebuffer::new(
         VIEWPORT_WIDTH as u32,
@@ -68,8 +74,9 @@ fn main() {
         .indices
         .iter()
         .map(|&index| {
-            vertex::Vertex::new_with_color(
+            vertex::Vertex::new(
                 obj.vertices[index],
+                obj.vertex_normals[index],
                 Vector3::new(0.25, 0.55, 0.95),
             )
         })
