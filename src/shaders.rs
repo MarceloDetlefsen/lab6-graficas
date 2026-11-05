@@ -5,6 +5,7 @@ use crate::fragment::Fragment;
 use crate::vertex::Vertex;
 
 #[allow(dead_code)]
+#[derive(Clone, Copy)]
 pub enum Shader {
     Star,
     Rocky,
@@ -46,7 +47,26 @@ pub fn vertex_shader(vertex: &Vertex, uniforms: &Uniforms) -> Vertex {
     result
 }
 
-pub fn fragment_shader(fragment: &Fragment) -> Vector3 {
+pub fn fragment_shader(fragment: &Fragment, shader: Shader, uniforms: &Uniforms) -> Vector3 {
+    let base_color = match shader {
+        Shader::Star => Vector3::new(1.0, 0.55, 0.08),
+        Shader::Rocky => Vector3::new(0.45, 0.20, 0.08),
+        Shader::GasGiant => Vector3::new(0.08, 0.30, 0.85),
+    };
+
+    if matches!(shader, Shader::Star) {
+        return base_color;
+    }
+
     let normal = fragment.normal.normalize();
-    normal * 0.5 + Vector3::new(0.5, 0.5, 0.5)
+    let diffuse = normal.dot(uniforms.light_dir).max(0.0);
+    base_color * (0.1 + 0.9 * diffuse)
+}
+
+pub fn shader_name(shader: Shader) -> &'static str {
+    match shader {
+        Shader::Star => "Shader: Star",
+        Shader::Rocky => "Shader: Rocky",
+        Shader::GasGiant => "Shader: Gas Giant",
+    }
 }

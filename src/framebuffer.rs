@@ -85,11 +85,12 @@ impl Framebuffer {
         }
     }
 
-    pub fn draw_in_window(&self, window: &mut RaylibHandle, thread: &RaylibThread) {
+    pub fn draw_in_window(&self, window: &mut RaylibHandle, thread: &RaylibThread, label: &str) {
         if let Ok(texture) = window.load_texture_from_image(thread, &self.color_buffer) {
             let mut drawing = window.begin_drawing(thread);
             drawing.clear_background(Color::BLACK);
             drawing.draw_texture(&texture, 0, 0, Color::WHITE);
+            drawing.draw_text(label, 16, 16, 20, Color::WHITE);
         }
     }
 

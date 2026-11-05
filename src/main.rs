@@ -14,7 +14,7 @@ use primitive::primitive_assembly;
 use rasterizer::{rasterize, TriangleMode, VIEWPORT_HEIGHT, VIEWPORT_WIDTH};
 use raylib::prelude::*;
 use scene::build_model_matrix;
-use shaders::{fragment_shader, vertex_shader};
+use shaders::{fragment_shader, shader_name, vertex_shader, Shader};
 
 pub struct Uniforms {
     pub model_matrix: Matrix,
@@ -28,6 +28,7 @@ fn render(
     uniforms: &Uniforms,
     vertex_array: &[vertex::Vertex],
     mode: TriangleMode,
+    shader: Shader,
 ) {
     let transformed_vertices: Vec<vertex::Vertex> = vertex_array
         .iter()
@@ -38,7 +39,7 @@ fn render(
     let fragments = rasterize(&triangles, mode);
 
     for fragment in fragments {
-        let fragment_color = fragment_shader(&fragment);
+        let fragment_color = fragment_shader(&fragment, shader, uniforms);
         let color = Color::new(
             (fragment_color.x.clamp(0.0, 1.0) * 255.0) as u8,
             (fragment_color.y.clamp(0.0, 1.0) * 255.0) as u8,
@@ -101,6 +102,7 @@ fn main() {
     let mut pitch = 0.0_f32;
     let mut zoom = 1.0_f32;
     let mut time = 0.0_f32;
+    let mut shader = Shader::Rocky;
 
     while !window.window_should_close() {
         time += window.get_frame_time();
@@ -109,6 +111,15 @@ fn main() {
         }
         if window.is_key_pressed(KeyboardKey::KEY_B) {
             mode = TriangleMode::FilledBarycentric;
+        }
+        if window.is_key_pressed(KeyboardKey::KEY_ONE) {
+            shader = Shader::Star;
+        }
+        if window.is_key_pressed(KeyboardKey::KEY_TWO) {
+            shader = Shader::Rocky;
+        }
+        if window.is_key_pressed(KeyboardKey::KEY_THREE) {
+            shader = Shader::GasGiant;
         }
         if window.is_key_down(KeyboardKey::KEY_LEFT) {
             yaw -= 0.03;
@@ -133,7 +144,7 @@ fn main() {
         };
 
         framebuffer.clear();
-        render(&mut framebuffer, &uniforms, &vertex_array, mode);
-        framebuffer.draw_in_window(&mut window, &thread);
+        render(&mut framebuffer, &uniforms, &vertex_array, mode, shader);
+        framebuffer.draw_in_window(&mut window, &thread, shader_name(shader));
     }
 }
