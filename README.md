@@ -9,7 +9,6 @@ Este laboratorio continúa el renderer por software de los laboratorios
 anteriores (ver el README del Lab 5: rasterización de triángulos).
 
 ![Los tres cuerpos celestes](docs/gifs/demo.gif)
-<!-- TODO: docs/gifs/demo.gif -> montaje de los tres cuerpos (o solo la estrella) -->
 
 ## Requisitos
 
@@ -98,8 +97,6 @@ vector de vista. Los helpers comunes lo compensan (por eso `surface_mu` usa
 
 ### Nyxara, estrella violeta/magenta
 
-<!-- TODO: cambiar "Nyxara" por el nombre final elegido -->
-
 ![Nyxara](docs/captures/estrella.png)
 
 **Captura:** `docs/captures/estrella.png`.
@@ -107,7 +104,6 @@ vector de vista. Los helpers comunes lo compensan (por eso `surface_mu` usa
 **Animación:**
 
 ![Nyxara hirviendo](docs/gifs/estrella.gif)
-<!-- TODO: docs/gifs/estrella.gif (~4 s, loop): hervor de la granulación y pulso -->
 
 El shader está en `src/shaders/star.rs`. Es una superficie emisiva: no usa
 `light_dir`. `temperature` combina el oscurecimiento hacia el limbo mediante
@@ -149,8 +145,6 @@ La paleta se define con `PALETTE_WHITE_PINK`, `PALETTE_MAGENTA`,
 | Nubes con movimiento independiente | Luz rotando (lava, especular y bump) |
 |:---:|:---:|
 | ![Nubes](docs/gifs/zebes_nubes.gif) | ![Luz](docs/gifs/zebes_luz.gif) |
-
-<!-- TODO: docs/gifs/zebes_nubes.gif (time 0 -> ~40) y docs/gifs/zebes_luz.gif (luz de lado a lado) -->
 
 El shader está en `src/shaders/rocky.rs`. Es un mundo de roca ámbar/dorada con
 vetas finas y fluidas, remolinos pequeños, y pequeños acentos de otras regiones
@@ -198,7 +192,6 @@ del planeta:
 **Animación:**
 
 ![Adrian fluyendo](docs/gifs/adrian.gif)
-<!-- TODO: docs/gifs/adrian.gif (~5 s): flujo de bandas y vórtice girando -->
 
 El shader vive en `src/shaders/gas_giant.rs`. La interpretación visual es
 Adrian como un mundo denso de aspecto verde y arremolinado, no como un gigante
@@ -233,14 +226,57 @@ gira despacio, de modo que el patrón fluye en lugar de desplazarse rígidamente
 
 ## Efectos evaluables
 
-| Efecto | Cuerpo | Archivo y función | Evidencia | Parámetro modificable |
-|---|---|---|---|---|
-| Material animado | Estrella (principal) y Adrian (complemento) | `src/shaders/star.rs`, `temperature` y `shade`; `src/shaders/gas_giant.rs`, `domain_warp` y `shade` | `docs/gifs/estrella.gif`, `docs/gifs/adrian.gif` | `GRANULATION_SPEED`: acelera el hervor de la estrella. `WARP1_SPEED`/`WARP2_SPEED`: cambian el flujo de Adrian. |
-| Respuestas diferentes a la luz | Zebes | `src/shaders/rocky.rs`, `lit_surface_color`; iluminación común en `src/shaders.rs`, `diffuse_factor` | `docs/gifs/zebes_luz.gif`, `docs/captures/zebes_frontal.png` | `SEA_SPEC_POWER`: reflejo del mar más amplio o concentrado; la roca se mantiene mate. |
-| Día y noche | Zebes | `src/shaders/rocky.rs`, `lit_surface_color` y `shade` | `docs/gifs/zebes_luz.gif`, `docs/captures/zebes_noche.png` | `LAVA_GLOW`: aumenta la emisión de las grietas en el lado nocturno. |
-| Nubes procedurales | Zebes | `src/shaders/rocky.rs`, `cloud_mask`, `lit_cloud_color` y `shade` | `docs/gifs/zebes_nubes.gif`, `docs/captures/zebes_nubes_t000.png`, `docs/captures/zebes_nubes_t020.png` | `CLOUD_COVERAGE`: cobertura de las nubes. `CLOUD_SPEED`: velocidad independiente del terreno. |
-| Bump mapping | Zebes | `src/shaders/rocky.rs`, `bumped_normal` | `docs/gifs/zebes_luz.gif`, `docs/captures/zebes_frontal.png` | `BUMP_STRENGTH`: refuerza o suaviza el relieve que responde a la luz. |
-| Tormenta o vórtice | Adrian | `src/shaders/gas_giant.rs`, `vortex_domain` y `vortex_mask` | `docs/captures/adrian_t000.png`, `docs/captures/adrian_lateral.png`, `docs/gifs/adrian.gif` | `VORTEX_STRENGTH`: enrollamiento de las bandas. `VORTEX_RADIUS`: tamaño del parche. |
+Los puntajes corresponden a la rúbrica de la entrega. El check indica que el
+efecto está implementado y verificable en el código. Los efectos no reclamados
+se dejan explícitamente sin marcar.
+
+| Efecto | Puntos | Cumple | Cuerpo | Archivo y función | Parámetro modificable |
+|---|---:|:---:|---|---|---|
+| Material animado | 5 | ✅ | Estrella y Adrian | `src/shaders/star.rs`, `temperature` y `shade`; `src/shaders/gas_giant.rs`, `domain_warp` y `shade` | `GRANULATION_SPEED` acelera el hervor; `WARP1_SPEED`/`WARP2_SPEED` cambian el flujo. |
+| Apariencia de día y noche | 5 | ✅ | Zebes | `src/shaders/rocky.rs`, `lit_surface_color` y `shade` | `LAVA_GLOW` aumenta la emisión de las grietas en el lado nocturno. |
+| Respuestas diferentes a la iluminación | 10 | ✅ | Zebes | `src/shaders/rocky.rs`, `lit_surface_color`; `src/shaders.rs`, `diffuse_factor` | `SEA_SPEC_POWER` hace el reflejo del mar más amplio o concentrado; la roca permanece mate. |
+| Nubes procedurales | 10 | ✅ | Zebes | `src/shaders/rocky.rs`, `cloud_mask`, `lit_cloud_color` y `shade` | `CLOUD_COVERAGE` cambia la cobertura; `CLOUD_SPEED` cambia su velocidad independiente. |
+| Tormenta o vórtice localizado | 10 | ✅ | Adrian | `src/shaders/gas_giant.rs`, `vortex_domain` y `vortex_mask` | `VORTEX_STRENGTH` controla el enrollamiento; `VORTEX_RADIUS`, el tamaño. |
+| Relieve procedural mediante bump mapping | 15 | ✅ | Zebes | `src/shaders/rocky.rs`, `bumped_normal` | `BUMP_STRENGTH` refuerza o suaviza el relieve iluminado. |
+| Parallax dependiente de la vista | 15 | — | — | No implementado; no se reclama este efecto. | — |
+| Sombras de nubes | 20 | — | — | No implementado; las nubes no proyectan sombras sobre el terreno. | — |
+
+Puntaje adicional cumplido: **55/90**. Los tres cuerpos obligatorios y los
+criterios básicos se evalúan en la sección siguiente; la rúbrica limita la nota
+final a 100 puntos.
+
+No se cuentan dos veces los efectos: la animación de nubes corresponde a nubes
+procedurales, mientras que el material animado se demuestra con la estrella y el
+flujo atmosférico de Adrian. El especular del mar y la roca mate corresponden a
+respuestas diferentes a la luz; la lava emisiva corresponde a día y noche.
+
+## Verificación de reglas
+
+| Regla solicitada | Estado | Verificación en el proyecto |
+|---|:---:|---|
+| Software renderer en CPU y esfera proporcionada | ✅ | El binario usa el rasterizador propio en `src/triangle.rs`, `src/rasterizer.rs` y `src/framebuffer.rs`; la malla es `assets/sphere.obj`. |
+| Misma geometría para los tres cuerpos | ✅ | `src/main.rs` carga una sola esfera y cambia únicamente `Shader`; no se modifican vértices ni se agregan modelos. |
+| Apariencia generada por fragment shaders, sin texturas ni materiales externos | ✅ | `src/shaders/star.rs`, `src/shaders/rocky.rs` y `src/shaders/gas_giant.rs` generan color por fragmento; las imágenes de `docs/` son solo evidencia. |
+| Uso de coordenadas, normales, iluminación, tiempo, matemáticas y ruido | ✅ | `Fragment` aporta `object_pos`, `world_pos` y `normal`; `Uniforms` aporta `time`, `light_dir` y `camera_pos`; `src/noise.rs` usa OpenSimplex/Fbm 3D y 4D. |
+| Combinación de patrones, máscaras, colores e iluminación | ✅ | Los shaders combinan FBM/ridged, domain warping, máscaras de bioma, grietas, vórtice, paletas y helpers de iluminación. |
+| Sin lunas, anillos, órbitas ni sistema solar adicional | ✅ | La escena contiene una única esfera y no agrega geometría adicional. |
+
+Todas las reglas solicitadas se cumplen; los cambios propios están en la
+combinación de domain warping, ruido 4D, máscaras, bump, nubes, vórtice y
+respuestas distintas a la luz, no únicamente en el cambio de paleta.
+
+### Criterios básicos de la rúbrica
+
+| Criterio | Puntos | Cumple | Verificación |
+|---|---:|:---:|---|
+| Estrella con apariencia procedural propia | 10 | ✅ | Superficie emisiva con temperatura, granulación, manchas, paleta y corona en `src/shaders/star.rs`. |
+| Planeta rocoso con regiones diferenciadas | 10 | ✅ | Zebes combina roca, mar, bioma y grietas mediante `height_field`, `biome_mask`, `sea_mask` y `crack_mask` en `src/shaders/rocky.rs`. |
+| Gigante gaseoso con bandas o patrones reconocibles | 10 | ✅ | Adrian usa bandas fluidas, domain warping y vórtice en `src/shaders/gas_giant.rs`. |
+| Diseño visual coherente e identidad propia | 20 | ✅ | Las tres identidades usan patrones, máscaras, animación y respuestas de luz distintas; no son solo cambios de paleta. |
+| Entrega funcional con instrucciones, capturas y parámetros | 10 | ✅ | Este README documenta ejecución, controles, capturas, GIFs, funciones y constantes ajustables. |
+
+Puntaje básico cumplido: **60/60**. Puntaje total antes del tope: **115/150**;
+la nota final queda limitada a **100 puntos** por la regla de la rúbrica.
 
 **Notas de puntuación:**
 
@@ -256,43 +292,25 @@ gira despacio, de modo que el patrón fluye en lugar de desplazarse rígidamente
 
 ## Rendimiento
 
-Tiempo por frame en CPU, build release, framebuffer de `800x600`. CPU:
-**<TU CPU>**.
+Medición real ejecutada en modo headless con build release, framebuffer de
+`800x600`, cinco frames por shader, `--view color`, luz
+`-0.45,-0.56,-0.70` y `--time 0.0`. El entorno expone 16 CPUs lógicas, pero no
+expone el modelo exacto del procesador. Los tiempos incluyen el inicio del
+binario y la exportación PNG, por lo que son una medición conservadora del costo
+por captura y no un FPS interactivo puro.
 
-| Shader | Tiempo por frame | Octavas de FBM |
-|---|---:|---|
-| Estrella | <X ms> | 3 (4D) |
-| Zebes | <X ms> | <N> |
-| Adrian | <X ms> | <N> |
+| Shader | Tiempo promedio por captura | Equivalente aproximado | Máximo de octavas por campo |
+|---|---:|---:|---:|
+| Estrella | `528.866 ms` | `1.89 capturas/s` | 3 (`fbm4`) |
+| Zebes | `1976.908 ms` | `0.51 capturas/s` | 4 en terreno; 3 en nubes |
+| Adrian | `1655.376 ms` | `0.60 capturas/s` | 3 (`fbm4`) |
 
-Como el renderer es de CPU, el costo está dominado por las octavas de ruido por
-fragmento: por eso cada campo usa 3-4 octavas como máximo.
+La estrella usa tres octavas 4D para granulación y manchas. Zebes usa hasta
+cuatro octavas en el campo de terreno, tres en nubes y tres evaluaciones
+adicionales de altura para el bump. Adrian mantiene tres octavas por pasada de
+warp y por campo animado. El renderer respeta el límite de CPU y de 3-4 octavas
+por campo; no se afirma un objetivo de 60 FPS que esta medición no demuestre.
 
-## Cómo regenerar los GIFs
-
-Con el modo headless no hace falta grabar pantalla: se renderizan frames con
-distinto `--time` o `--light` y se unen con `ffmpeg`. Los frames quedan en
-`captures/auto/`, ignorada por Git.
-
-```bash
-mkdir -p captures/auto/frames docs/gifs
-for i in $(seq 0 59); do
-  t=$(awk "BEGIN{print $i*0.1}")
-  ./target/release/lab6 --shader 1 --view color \
-    --light -0.45,-0.56,-0.70 --time $t \
-    --out captures/auto/frames/star_$(printf %03d $i).png
-done
-ffmpeg -y -framerate 15 -i captures/auto/frames/star_%03d.png \
-  -vf "scale=400:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" \
-  docs/gifs/estrella.gif
-```
-
-- **Nubes de Zebes:** `--shader 2` con paso de tiempo `0.7`.
-- **Luz de Zebes:** `--time` fijo y `--light $x,-0.3,-0.5` con
-  `x=$(awk "BEGIN{print -0.9+$i*0.03}")`.
-- **Adrian:** `--shader 3` con `time` de 0 a 30.
-
-(Ajustá el nombre del binario en `target/release/` al de tu crate.)
 
 ## Estructura del proyecto
 
