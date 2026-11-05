@@ -137,11 +137,7 @@ fn main() {
         if window.is_key_pressed(KeyboardKey::KEY_THREE) {
             shader = Shader::GasGiant;
         }
-        if window.is_key_pressed(KeyboardKey::KEY_P) {
-            let capture_path = next_capture_path();
-            framebuffer.render_to_file(capture_path.to_str().expect("Ruta de captura inválida"));
-            println!("Captura guardada en {}", capture_path.display());
-        }
+        let capture_requested = window.is_key_pressed(KeyboardKey::KEY_P);
         if window.is_key_down(KeyboardKey::KEY_LEFT) {
             yaw -= 0.03;
         }
@@ -166,6 +162,11 @@ fn main() {
 
         framebuffer.clear();
         render(&mut framebuffer, &uniforms, &vertex_array, mode, shader);
+        if capture_requested {
+            let capture_path = next_capture_path();
+            framebuffer.render_to_file(capture_path.to_str().expect("Ruta de captura inválida"));
+            println!("Captura guardada en {}", capture_path.display());
+        }
         framebuffer.draw_in_window(&mut window, &thread, shader_name(shader));
     }
 }
