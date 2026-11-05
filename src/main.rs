@@ -29,6 +29,91 @@ pub struct Uniforms {
     pub rocky_debug_view: i32,
 }
 
+struct CaptureOptions {
+    shader: Shader,
+    view: i32,
+    light_dir: Vector3,
+    time: f32,
+    output: PathBuf,
+}
+
+fn parse_vector3(value: &str, argument: &str) -> Vector3 {
+    let components: Vec<f32> = value
+        .split(',')
+        .map(|component| {
+            component
+                .parse::<f32>()
+                .unwrap_or_else(|_| panic!("Valor inválido para {argument}: {value}"))
+        })
+        .collect();
+    if components.len() != 3 {
+        panic!("{argument} debe tener formato x,y,z: {value}");
+    }
+    Vector3::new(components[0], components[1], components[2]).normalize()
+}
+
+fn parse_shader(value: &str) -> Shader {
+    match value {
+        "1" => Shader::Star,
+        "2" => Shader::Rocky,
+        "3" => Shader::GasGiant,
+        _ => panic!("Shader inválido: {value}; usá 1, 2 o 3"),
+    }
+}
+
+fn parse_view(value: &str) -> i32 {
+    match value {
+        "height" | "altura" => 0,
+        "biome" | "bioma" => 1,
+        "cracks" | "grietas" => 2,
+        "color" => 3,
+        _ => panic!("Vista inválida: {value}; usá height, biome, cracks o color"),
+    }
+}
+
+fn parse_capture_options() -> Option<CaptureOptions> {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments.is_empty() {
+        return None;
+    }
+
+    let mut shader = None;
+    let mut view = None;
+    let mut light_dir = None;
+    let mut time = None;
+    let mut output = None;
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = &arguments[index];
+        let value = arguments.get(index + 1).unwrap_or_else(|| {
+            panic!("Falta valor para {argument}; argumentos esperados: --shader, --view, --light, --time, --out")
+        });
+        match argument.as_str() {
+            "--shader" => shader = Some(parse_shader(value)),
+            "--view" => view = Some(parse_view(value)),
+            "--light" => light_dir = Some(parse_vector3(value, "--light")),
+            "--time" => {
+                time = Some(
+                    value
+                        .parse::<f32>()
+                        .unwrap_or_else(|_| panic!("Tiempo inválido: {value}")),
+                )
+            }
+            "--out" => output = Some(PathBuf::from(value)),
+            _ => panic!("Argumento desconocido: {argument}"),
+        }
+        index += 2;
+    }
+
+    Some(CaptureOptions {
+        shader: shader.expect("Falta --shader"),
+        view: view.expect("Falta --view"),
+        light_dir: light_dir.expect("Falta --light"),
+        time: time.expect("Falta --time"),
+        output: output.expect("Falta --out"),
+    })
+}
+
 fn next_capture_path() -> PathBuf {
     let captures_dir = PathBuf::from("captures");
     fs::create_dir_all(&captures_dir).expect("No se pudo crear el directorio captures");
@@ -88,17 +173,6 @@ fn main() {
         .all(|normal| (normal.length() - 1.0).abs() <= 1e-4);
     println!("  Normales suaves unitarias (~1): {normals_are_unit}");
 
-    let mut framebuffer = Framebuffer::new(
-        VIEWPORT_WIDTH as u32,
-        VIEWPORT_HEIGHT as u32,
-        Color::new(15, 18, 28, 255),
-    );
-    let (mut window, thread) = raylib::init()
-        .size(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-        .title("Lab 6 - Esfera procedural")
-        .build();
-    window.set_target_fps(60);
-
     let vertex_array: Vec<vertex::Vertex> = obj
         .indices
         .iter()
@@ -116,6 +190,50 @@ fn main() {
     let model_height = max.y - min.y;
     let scale = (VIEWPORT_WIDTH as f32 * 0.8 / model_width)
         .min(VIEWPORT_HEIGHT as f32 * 0.8 / model_height);
+
+    let mut framebuffer = Framebuffer::new(
+        VIEWPORT_WIDTH as u32,
+        VIEWPORT_HEIGHT as u32,
+        Color::new(15, 18, 28, 255),
+    );
+
+    if let Some(options) = parse_capture_options() {
+        let model_matrix = build_model_matrix(&obj, scale, 0.0, 0.0, 1.0);
+        let uniforms = Uniforms {
+            model_matrix,
+            time: options.time,
+            light_dir: options.light_dir,
+            camera_pos: Vector3::new(0.0, 0.0, scale * 2.0),
+            debug_noise: false,
+            noise_frequency: 4.0,
+            rocky_debug_view: options.view,
+        };
+        framebuffer.clear();
+        render(
+            &mut framebuffer,
+            &uniforms,
+            &vertex_array,
+            TriangleMode::FilledBarycentric,
+            options.shader,
+        );
+        if let Some(parent) = options.output.parent() {
+            fs::create_dir_all(parent).expect("No se pudo crear el directorio de captura");
+        }
+        framebuffer.render_to_file(
+            options
+                .output
+                .to_str()
+                .expect("Ruta de captura inválida"),
+        );
+        println!("Captura automática guardada en {}", options.output.display());
+        return;
+    }
+
+    let (mut window, thread) = raylib::init()
+        .size(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+        .title("Lab 6 - Esfera procedural")
+        .build();
+    window.set_target_fps(60);
 
     let mut mode = TriangleMode::FilledBarycentric;
     let mut yaw = 0.0_f32;
