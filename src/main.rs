@@ -45,7 +45,12 @@ fn render(
             (fragment_color.z.clamp(0.0, 1.0) * 255.0) as u8,
             255,
         );
-        framebuffer.set_pixel(fragment.position.x as i32, fragment.position.y as i32, color);
+        framebuffer.set_pixel_depth(
+            fragment.position.x as i32,
+            fragment.position.y as i32,
+            fragment.depth,
+            color,
+        );
     }
 }
 
