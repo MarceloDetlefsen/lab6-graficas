@@ -17,15 +17,17 @@ pub const SPOT_FREQ: f32 = 2.5;
 // Reservada para la animación de la Fase 2: velocidad temporal de las manchas.
 pub const SPOT_SPEED: f32 = 0.15;
 // Umbral de ruido a partir del cual comienzan las manchas oscuras aisladas.
-pub const SPOT_THRESHOLD: f32 = 0.68;
+pub const SPOT_THRESHOLD: f32 = 0.59;
 // Suavidad del borde de las manchas.
-pub const SPOT_SOFTNESS: f32 = 0.10;
+pub const SPOT_SOFTNESS: f32 = 0.03;
 // Exponente del oscurecimiento hacia el borde del disco.
 pub const LIMB_EXPONENT: f32 = 2.5;
 // Temperatura mínima del disco en el limbo antes de aplicar granulación y manchas.
-pub const LIMB_MIN_TEMPERATURE: f32 = 0.30;
+pub const LIMB_MIN_TEMPERATURE: f32 = 0.25;
+// Temperatura máxima del centro del disco antes de aplicar granulación y manchas.
+pub const LIMB_MAX_TEMPERATURE: f32 = 0.95;
 // Cuánto oscurece cada mancha después del smoothstep.
-pub const SPOT_DARKNESS: f32 = 0.55;
+pub const SPOT_DARKNESS: f32 = 0.75;
 // Exponente del anillo de corona de la Fase 2.
 pub const CORONA_EXPONENT: f32 = 5.0;
 // Intensidad del anillo de corona de la Fase 2.
@@ -49,7 +51,7 @@ fn surface_mu(fragment: &Fragment, uniforms: &Uniforms) -> f32 {
 pub fn temperature(fragment: &Fragment, uniforms: &Uniforms) -> f32 {
     let mu = surface_mu(fragment, uniforms);
     let limb = LIMB_MIN_TEMPERATURE
-        + (1.0 - LIMB_MIN_TEMPERATURE) * mu.powf(LIMB_EXPONENT);
+        + (LIMB_MAX_TEMPERATURE - LIMB_MIN_TEMPERATURE) * mu.powf(LIMB_EXPONENT);
 
     let surface_position = fragment.object_pos.normalize();
     let granulation_noise = noise::fbm(
@@ -118,5 +120,31 @@ mod tests {
         println!("star mu: center={center:.3}, limb={limb:.3}");
         assert!(center > 0.99);
         assert!(limb < 0.01);
+    }
+
+    #[test]
+    fn reports_spot_noise_distribution() {
+        let sample_count = 4096;
+        let golden_angle = std::f32::consts::PI * (3.0 - 5.0_f32.sqrt());
+        let mut values = Vec::with_capacity(sample_count);
+
+        for i in 0..sample_count {
+            let y = 1.0 - (i as f32 + 0.5) * 2.0 / sample_count as f32;
+            let radius = (1.0 - y * y).sqrt();
+            let angle = golden_angle * i as f32;
+            let point = Vector3::new(radius * angle.cos(), y, radius * angle.sin());
+            values.push(noise::fbm(point * SPOT_FREQ, 3, 2.0, 0.5));
+        }
+
+        values.sort_by(f32::total_cmp);
+        let percentile = |p: f32| values[(p * (values.len() - 1) as f32) as usize];
+        println!(
+            "spot noise: min={:.3}, p05={:.3}, p50={:.3}, p95={:.3}, max={:.3}",
+            values[0],
+            percentile(0.05),
+            percentile(0.50),
+            percentile(0.95),
+            values[values.len() - 1],
+        );
     }
 }
