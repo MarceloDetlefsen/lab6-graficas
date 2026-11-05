@@ -6,7 +6,7 @@ use std::sync::Once;
 use crate::Uniforms;
 use crate::fragment::Fragment;
 use crate::noise;
-use crate::shaders::diffuse_factor;
+use crate::shaders::{diffuse_factor, surface_view};
 
 // Percentil inferior usado para remapear el campo y evitar una masa gris plana.
 pub const H_LOW: f32 = 0.507;
@@ -52,6 +52,16 @@ pub const COLOR_PINK: [f32; 3] = [0.90, 0.35, 0.60];
 pub const COLOR_CRACK: [f32; 3] = [1.00, 0.55, 0.10];
 // Iluminación mínima para conservar detalle en el lado oscuro.
 pub const AMBIENT: f32 = 0.15;
+// Separación de las muestras de altura usadas para estimar el gradiente.
+pub const BUMP_DELTA: f32 = 0.002;
+// Fuerza del relieve sobre la normal; valores altos hacen más marcado el modelado.
+pub const BUMP_STRENGTH: f32 = 1.8;
+// Exponente del reflejo concentrado de los mares ácidos.
+pub const SEA_SPEC_POWER: f32 = 48.0;
+// Intensidad máxima del reflejo especular del mar.
+pub const SEA_SPEC_STRENGTH: f32 = 0.8;
+// Emisión máxima de las grietas en la cara nocturna.
+pub const LAVA_GLOW: f32 = 0.75;
 
 static PRINTED_STATS: Once = Once::new();
 
@@ -192,6 +202,62 @@ fn surface_color(object_pos: Vector3, height: f32) -> Vector3 {
     noise::mix_color(with_biome, color(COLOR_CRACK), crack_mask(object_pos))
 }
 
+fn model_normal(model: &raylib::prelude::Matrix, normal: Vector3) -> Vector3 {
+    Vector3::new(
+        model.m0 * normal.x + model.m4 * normal.y + model.m8 * normal.z,
+        model.m1 * normal.x + model.m5 * normal.y + model.m9 * normal.z,
+        model.m2 * normal.x + model.m6 * normal.y + model.m10 * normal.z,
+    )
+    .normalize()
+}
+
+fn bumped_normal(fragment: &Fragment, uniforms: &Uniforms, height: f32) -> Vector3 {
+    let p = fragment.object_pos.normalize();
+    let dx = Vector3::new(BUMP_DELTA, 0.0, 0.0);
+    let dy = Vector3::new(0.0, BUMP_DELTA, 0.0);
+    let dz = Vector3::new(0.0, 0.0, BUMP_DELTA);
+    let gradient = Vector3::new(
+        (height_field(p + dx) - height) / BUMP_DELTA,
+        (height_field(p + dy) - height) / BUMP_DELTA,
+        (height_field(p + dz) - height) / BUMP_DELTA,
+    );
+    // La altura aumenta en la dirección del gradiente; la normal de una superficie
+    // elevada se inclina contra él. Este signo mantiene las crestas claras hacia la luz.
+    let object_normal = (p - gradient * BUMP_STRENGTH).normalize();
+    model_normal(&uniforms.model_matrix, object_normal)
+}
+
+fn lit_surface_color(
+    fragment: &Fragment,
+    uniforms: &Uniforms,
+    height: f32,
+    base: Vector3,
+) -> Vector3 {
+    let normal = if height < SEA_LEVEL {
+        fragment.normal.normalize()
+    } else {
+        bumped_normal(fragment, uniforms, height)
+    };
+    let diffuse = diffuse_factor(normal, uniforms);
+    let mut result = base * (AMBIENT + (1.0 - AMBIENT) * diffuse);
+
+    let sea_edge = noise::smoothstep(SEA_LEVEL, SEA_LEVEL + 0.12, height);
+    let view = surface_view(fragment, uniforms);
+    let half_vector = (uniforms.light_dir + view).normalize();
+    let specular = normal
+        .dot(half_vector)
+        .max(0.0)
+        .powf(SEA_SPEC_POWER)
+        * SEA_SPEC_STRENGTH
+        * (1.0 - sea_edge);
+    result += Vector3::new(1.0, 1.0, 1.0) * specular;
+
+    let crack = crack_mask(fragment.object_pos);
+    let n_dot_l = diffuse_factor(fragment.normal, uniforms);
+    result += color(COLOR_CRACK) * (crack * LAVA_GLOW * (1.0 - n_dot_l));
+    result
+}
+
 pub fn shade(fragment: &Fragment, uniforms: &Uniforms) -> Vector3 {
     print_statistics_once();
     let height = height_field(fragment.object_pos);
@@ -206,8 +272,7 @@ pub fn shade(fragment: &Fragment, uniforms: &Uniforms) -> Vector3 {
         }
         3 => {
             let base = surface_color(fragment.object_pos, height);
-            let diffuse = diffuse_factor(fragment.normal, uniforms);
-            base * (AMBIENT + (1.0 - AMBIENT) * diffuse)
+            lit_surface_color(fragment, uniforms, height, base)
         }
         _ => Vector3::new(height, height, height),
     }

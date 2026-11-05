@@ -125,7 +125,8 @@ fn main() {
     let mut shader = Shader::Rocky;
     let mut debug_noise = false;
     let mut noise_frequency = 4.0_f32;
-    let mut rocky_debug_view = 0_i32;
+    let mut rocky_debug_view = 3_i32;
+    let mut light_angle = 0.0_f32;
 
     while !window.window_should_close() {
         time += window.get_frame_time();
@@ -150,6 +151,12 @@ fn main() {
         if window.is_key_pressed(KeyboardKey::KEY_V) {
             rocky_debug_view = (rocky_debug_view + 1) % 4;
         }
+        if window.is_key_down(KeyboardKey::KEY_J) {
+            light_angle -= 0.03;
+        }
+        if window.is_key_down(KeyboardKey::KEY_L) {
+            light_angle += 0.03;
+        }
         if window.is_key_pressed(KeyboardKey::KEY_LEFT_BRACKET) {
             noise_frequency = (noise_frequency - 0.25).max(0.25);
         }
@@ -172,10 +179,17 @@ fn main() {
         zoom = (zoom + window.get_mouse_wheel_move() * 0.1).clamp(0.2, 4.0);
 
         let model_matrix = build_model_matrix(&obj, scale, yaw, pitch, zoom);
+        let base_light = Vector3::new(-1.0, -1.0, -1.0).normalize();
+        let light_dir = Vector3::new(
+            base_light.x * light_angle.cos() - base_light.z * light_angle.sin(),
+            base_light.y,
+            base_light.x * light_angle.sin() + base_light.z * light_angle.cos(),
+        )
+        .normalize();
         let uniforms = Uniforms {
             model_matrix,
             time,
-            light_dir: Vector3::new(-1.0, -1.0, -1.0).normalize(),
+            light_dir,
             camera_pos: Vector3::new(0.0, 0.0, scale * zoom * 2.0),
             debug_noise,
             noise_frequency,
@@ -191,10 +205,13 @@ fn main() {
         }
         let debug_label = if debug_noise { " | DEBUG FBM" } else { "" };
         let label = format!(
-            "{}{} | Rocky: {} | Noise freq: {:.2}",
+            "{}{} | Rocky: {} | Luz: ({:.2},{:.2},{:.2}) | Noise freq: {:.2}",
             shader_name(shader),
             debug_label,
             ["altura", "bioma", "grietas", "color"][rocky_debug_view as usize],
+            light_dir.x,
+            light_dir.y,
+            light_dir.z,
             noise_frequency,
         );
         framebuffer.draw_in_window(&mut window, &thread, &label);
