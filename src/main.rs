@@ -26,6 +26,7 @@ pub struct Uniforms {
     pub camera_pos: Vector3,
     pub debug_noise: bool,
     pub noise_frequency: f32,
+    pub rocky_debug_view: i32,
 }
 
 fn next_capture_path() -> PathBuf {
@@ -124,6 +125,7 @@ fn main() {
     let mut shader = Shader::Rocky;
     let mut debug_noise = false;
     let mut noise_frequency = 4.0_f32;
+    let mut rocky_debug_view = 0_i32;
 
     while !window.window_should_close() {
         time += window.get_frame_time();
@@ -144,6 +146,9 @@ fn main() {
         }
         if window.is_key_pressed(KeyboardKey::KEY_D) {
             debug_noise = !debug_noise;
+        }
+        if window.is_key_pressed(KeyboardKey::KEY_V) {
+            rocky_debug_view = (rocky_debug_view + 1) % 3;
         }
         if window.is_key_pressed(KeyboardKey::KEY_LEFT_BRACKET) {
             noise_frequency = (noise_frequency - 0.25).max(0.25);
@@ -174,6 +179,7 @@ fn main() {
             camera_pos: Vector3::new(0.0, 0.0, scale * zoom * 2.0),
             debug_noise,
             noise_frequency,
+            rocky_debug_view,
         };
 
         framebuffer.clear();
@@ -185,9 +191,10 @@ fn main() {
         }
         let debug_label = if debug_noise { " | DEBUG FBM" } else { "" };
         let label = format!(
-            "{}{} | Noise freq: {:.2}",
+            "{}{} | Rocky: {} | Noise freq: {:.2}",
             shader_name(shader),
             debug_label,
+            ["altura", "bioma", "grietas"][rocky_debug_view as usize],
             noise_frequency,
         );
         framebuffer.draw_in_window(&mut window, &thread, &label);

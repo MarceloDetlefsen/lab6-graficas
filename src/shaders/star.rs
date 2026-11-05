@@ -142,6 +142,7 @@ mod tests {
             camera_pos,
             debug_noise: false,
             noise_frequency: 4.0,
+            rocky_debug_view: 0,
         }
     }
 
