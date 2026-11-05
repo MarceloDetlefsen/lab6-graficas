@@ -171,7 +171,7 @@ fn main() {
             model_matrix,
             time,
             light_dir: Vector3::new(-1.0, -1.0, -1.0).normalize(),
-            camera_pos: Vector3::zero(),
+            camera_pos: Vector3::new(0.0, 0.0, scale * zoom * 2.0),
             debug_noise,
             noise_frequency,
         };
