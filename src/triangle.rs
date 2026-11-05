@@ -1,4 +1,4 @@
-use raylib::prelude::Vector3;
+use raylib::prelude::{Vector2, Vector3};
 
 use crate::fragment::Fragment;
 use crate::rasterizer::{VIEWPORT_HEIGHT, VIEWPORT_WIDTH};
@@ -8,6 +8,29 @@ pub const DEGENERATE_EPS: f32 = 1e-6;
 
 fn edge(p: (f32, f32), q: (f32, f32), r: (f32, f32)) -> f32 {
     (r.0 - p.0) * (q.1 - p.1) - (r.1 - p.1) * (q.0 - p.0)
+}
+
+fn interpolated_fragment(
+    a: &Vertex,
+    b: &Vertex,
+    c: &Vertex,
+    position: Vector2,
+    weights: (f32, f32, f32),
+) -> Fragment {
+    let (w_a, w_b, w_c) = weights;
+    Fragment {
+        position,
+        object_pos: a.position * w_a + b.position * w_b + c.position * w_c,
+        world_pos: a.world_position * w_a + b.world_position * w_b + c.world_position * w_c,
+        normal: (a.transformed_normal * w_a
+            + b.transformed_normal * w_b
+            + c.transformed_normal * w_c)
+            .normalize(),
+        color: a.color * w_a + b.color * w_b + c.color * w_c,
+        depth: a.transformed_position.z * w_a
+            + b.transformed_position.z * w_b
+            + c.transformed_position.z * w_c,
+    }
 }
 
 pub fn is_degenerate(a: &Vertex, b: &Vertex, c: &Vertex) -> bool {
@@ -20,18 +43,24 @@ pub fn is_degenerate(a: &Vertex, b: &Vertex, c: &Vertex) -> bool {
 pub fn triangle_wireframe(a: &Vertex, b: &Vertex, c: &Vertex) -> Vec<Fragment> {
     let mut fragments = Vec::new();
     let edges = [
-        (a, b, Vector3::new(1.0, 0.0, 0.0)),
-        (b, c, Vector3::new(0.0, 1.0, 0.0)),
-        (c, a, Vector3::new(0.0, 0.0, 1.0)),
+        (a, b, Vector3::new(1.0, 0.0, 0.0), 0),
+        (b, c, Vector3::new(0.0, 1.0, 0.0), 1),
+        (c, a, Vector3::new(0.0, 0.0, 1.0), 2),
     ];
-    for (start, end, edge_color) in edges {
+    for (start, end, edge_color, edge_index) in edges {
         let dx = end.transformed_position.x - start.transformed_position.x;
         let dy = end.transformed_position.y - start.transformed_position.y;
         let steps = dx.abs().max(dy.abs()).ceil() as usize;
         for step in 0..=steps {
             let t = if steps == 0 { 0.0 } else { step as f32 / steps as f32 };
             let p = start.transformed_position + (end.transformed_position - start.transformed_position) * t;
-            fragments.push(Fragment::new(p.x, p.y, edge_color, p.z));
+            let weights = match edge_index {
+                0 => (1.0 - t, t, 0.0),
+                1 => (0.0, 1.0 - t, t),
+                _ => (t, 0.0, 1.0 - t),
+            };
+            let fragment = interpolated_fragment(a, b, c, Vector2::new(p.x, p.y), weights);
+            fragments.push(Fragment { color: edge_color, ..fragment });
         }
     }
     fragments
@@ -62,7 +91,6 @@ pub fn triangle_scanline(a: &Vertex, b: &Vertex, c: &Vertex) -> Vec<Fragment> {
     }
     let start_y = ((y_min - 0.5).ceil() as i32).clamp(0, VIEWPORT_HEIGHT - 1);
     let end_y = ((y_max - 0.5).floor() as i32).clamp(0, VIEWPORT_HEIGHT - 1);
-    let depth = (a.transformed_position.z + b.transformed_position.z + c.transformed_position.z) / 3.0;
     let mut fragments = Vec::new();
 
     for y in start_y..=end_y {
@@ -99,8 +127,13 @@ pub fn triangle_scanline(a: &Vertex, b: &Vertex, c: &Vertex) -> Vec<Fragment> {
                 let w_a = edge(points[1], points[2], p) * inverse_area;
                 let w_b = edge(points[2], points[0], p) * inverse_area;
                 let w_c = edge(points[0], points[1], p) * inverse_area;
-                let color = a.color * w_a + b.color * w_b + c.color * w_c;
-                fragments.push(Fragment::new(p.0, p.1, color, depth));
+                fragments.push(interpolated_fragment(
+                    a,
+                    b,
+                    c,
+                    Vector2::new(p.0, p.1),
+                    (w_a, w_b, w_c),
+                ));
             }
         }
     }
@@ -134,7 +167,6 @@ pub fn triangle_barycentric(a: &Vertex, b: &Vertex, c: &Vertex) -> Vec<Fragment>
     let estimated_capacity = ((area.abs() * 0.5) as usize)
         .min((VIEWPORT_WIDTH * VIEWPORT_HEIGHT) as usize);
     let mut fragments = Vec::with_capacity(estimated_capacity);
-    let depth = (a.transformed_position.z + b.transformed_position.z + c.transformed_position.z) / 3.0;
 
     for y in start_y..=end_y {
         for x in start_x..=end_x {
@@ -145,10 +177,13 @@ pub fn triangle_barycentric(a: &Vertex, b: &Vertex, c: &Vertex) -> Vec<Fragment>
             let w_c = edge(pa, pb, p) * inverse_area;
 
             if w_a >= 0.0 && w_b >= 0.0 && w_c >= 0.0 {
-                // El color se interpola entre los tres vértices; la profundidad
-                // conserva el promedio hasta implementar interpolación de depth.
-                let color = a.color * w_a + b.color * w_b + c.color * w_c;
-                fragments.push(Fragment::new(x as f32 + 0.5, y as f32 + 0.5, color, depth));
+                fragments.push(interpolated_fragment(
+                    a,
+                    b,
+                    c,
+                    Vector2::new(x as f32 + 0.5, y as f32 + 0.5),
+                    (w_a, w_b, w_c),
+                ));
             }
         }
     }
