@@ -18,6 +18,9 @@ use shaders::{fragment_shader, vertex_shader};
 
 pub struct Uniforms {
     pub model_matrix: Matrix,
+    pub time: f32,
+    pub light_dir: Vector3,
+    pub camera_pos: Vector3,
 }
 
 fn render(
@@ -92,8 +95,10 @@ fn main() {
     let mut yaw = 0.0_f32;
     let mut pitch = 0.0_f32;
     let mut zoom = 1.0_f32;
+    let mut time = 0.0_f32;
 
     while !window.window_should_close() {
+        time += window.get_frame_time();
         if window.is_key_pressed(KeyboardKey::KEY_W) {
             mode = TriangleMode::Wireframe;
         }
@@ -115,7 +120,12 @@ fn main() {
         zoom = (zoom + window.get_mouse_wheel_move() * 0.1).clamp(0.2, 4.0);
 
         let model_matrix = build_model_matrix(&obj, scale, yaw, pitch, zoom);
-        let uniforms = Uniforms { model_matrix };
+        let uniforms = Uniforms {
+            model_matrix,
+            time,
+            light_dir: Vector3::new(-1.0, -1.0, -1.0).normalize(),
+            camera_pos: Vector3::zero(),
+        };
 
         framebuffer.clear();
         render(&mut framebuffer, &uniforms, &vertex_array, mode);

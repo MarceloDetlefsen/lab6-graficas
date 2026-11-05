@@ -4,6 +4,13 @@ use crate::Uniforms;
 use crate::fragment::Fragment;
 use crate::vertex::Vertex;
 
+#[allow(dead_code)]
+pub enum Shader {
+    Star,
+    Rocky,
+    GasGiant,
+}
+
 fn multiply_matrix_vector4(matrix: &Matrix, vector: &Vector4) -> Vector4 {
     Vector4::new(
         matrix.m0 * vector.x + matrix.m4 * vector.y + matrix.m8 * vector.z + matrix.m12 * vector.w,
